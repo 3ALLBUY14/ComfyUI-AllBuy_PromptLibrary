@@ -13,7 +13,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 const API = "/allbuy_promptlibrary";
 const NODE_NAME = "MediaAssetLoader";
 const NODE_WIDTH = 470;
-const MEDIA_VERSION = "v1.32"; // 面板右下角版本号 + CSS/JS 缓存戳，随迭代递增（v1.1、v1.2…）
+const MEDIA_VERSION = "v1.33"; // 面板右下角版本号 + CSS/JS 缓存戳，随迭代递增（v1.1、v1.2…）
 const MEDIA_DIR = "allbuy_media";
 
 (function injectStyle() {
@@ -1680,9 +1680,7 @@ function startMediaPanel(node, container, wManifest) {
     ctx.fillStyle = "#eef1f8"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.fillText(label, x + 6, y + h2 / 2 + .5);
   }
-  function heroDur(ctx, xRight, yBottom, secs) {
-    if (!(secs > 0)) return;
-    const label = fmtDur(secs);
+  function heroBadge(ctx, xRight, yBottom, label) {
     ctx.font = "8.5px " + HERO_FONT;
     const w2 = ctx.measureText(label).width + 10, h2 = 13;
     const x = xRight - w2 - 5, y = yBottom - h2 - 5;
@@ -1690,6 +1688,9 @@ function startMediaPanel(node, container, wManifest) {
     ctx.fillStyle = "rgba(0,0,0,.55)"; ctx.fill();
     ctx.fillStyle = "#dfe4ee"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.fillText(label, x + 5, y + h2 / 2 + .5);
+  }
+  function heroDur(ctx, xRight, yBottom, secs) {
+    if (secs > 0) heroBadge(ctx, xRight, yBottom, fmtDur(secs));
   }
   function heroCover(ctx, img, x, y, w2, h2) {
     ctx.save();
@@ -1773,7 +1774,7 @@ function startMediaPanel(node, container, wManifest) {
         const selVid = state.selected.video ? byId(state.selected.video) : null;
         const selAud = state.selected.audio ? byId(state.selected.audio) : null;
         const phLabel = (type, name) => (assetsOf(type).length ? "未选" + name : "无" + name);
-        { // 图片卡：已选第一张（输出批次首帧）
+        { // 图片卡：已选第一张（输出批次首帧）+ 右下角已选数量（多选批次共有几张）
           const x = ix;
           if (selImg) {
             heroRoundRect(ctx, x, iy, cw, ih, 6);
@@ -1781,6 +1782,7 @@ function startMediaPanel(node, container, wManifest) {
             const img = heroImage("t", selImg);
             if (img) heroCover(ctx, img, x, iy, cw, ih);
             heroChip(ctx, x + 5, iy + 5, "图片");
+            heroBadge(ctx, x + cw, iy + ih, state.selected.image.length + " 张");
             heroPill(ctx, x + cw, iy, heroHover === 0);
           } else heroPlaceholder(ctx, x, iy, cw, ih, phLabel("image", "图片"), cLine, cSubtle);
         }
