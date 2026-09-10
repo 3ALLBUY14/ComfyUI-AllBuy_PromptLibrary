@@ -937,6 +937,20 @@
   color: var(--vpl-text-muted);
   font-weight: normal;
 }
+/* 标签行尾部操作钮（正向提示词复制/粘贴）：hover 整个字段才浮现 */
+.vpl-label-actions { margin-left: auto; display: inline-flex; gap: 2px; }
+.vpl-label-actions .vpl-icon-btn {
+  opacity: 0;
+  transition:
+    opacity .14s var(--vpl-ease),
+    background .14s var(--vpl-ease),
+    color .14s var(--vpl-ease),
+    transform .08s var(--vpl-ease);
+}
+.vpl-field:hover .vpl-label-actions .vpl-icon-btn,
+.vpl-label-actions .vpl-icon-btn:focus-visible,
+.vpl-label-actions .vpl-icon-btn.vpl-flash-ok { opacity: 1; }
+.vpl-label-actions .vpl-icon-btn.vpl-flash-ok { color: var(--vpl-primary); }
 .vpl-textarea {
   background: var(--vpl-bg-inset);
   color: var(--vpl-text);

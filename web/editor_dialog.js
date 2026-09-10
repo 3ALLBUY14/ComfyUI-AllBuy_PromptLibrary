@@ -16,9 +16,31 @@ export const COLOR_PRESETS = [
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_PASTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>';
+
+// 剪贴板：写优先 Clipboard API，失败（http 非安全源等）退回 execCommand；读没有可靠降级，失败返回 null
+async function copyToClipboard(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  ta.remove();
+  return ok;
+}
+async function readClipboard() {
+  try { return await navigator.clipboard.readText(); } catch {}
+  return null;
+}
 
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
+  // form 内按钮若不显式设 type 会默认成 submit，点击即触发保存——这里统一默认为普通按钮
+  if (tag === "button" && !(props && props.type)) el.type = "button";
   for (const [k, v] of Object.entries(props)) {
     if (k === "class") el.className = v;
     else if (k === "style") el.style.cssText = v;
@@ -236,6 +258,24 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     });
     negativeInput.value = data.negative || "";
 
+    // 正向提示词标签行：复制/粘贴整段内容（按钮 hover 浮现；flash 反馈成功）
+    function flashOk(btn) {
+      btn.classList.add("vpl-flash-ok");
+      setTimeout(() => btn.classList.remove("vpl-flash-ok"), 900);
+    }
+    const copyPosBtn = h("button", {
+      class: "vpl-icon-btn", title: "复制正向提示词", html: ICON_COPY,
+      onclick: async () => { if (await copyToClipboard(positiveInput.value)) flashOk(copyPosBtn); },
+    });
+    const pastePosBtn = h("button", {
+      class: "vpl-icon-btn", title: "用剪贴板内容替换正向提示词", html: ICON_PASTE,
+      onclick: async () => {
+        const t = await readClipboard();
+        if (t) { positiveInput.value = t; flashOk(pastePosBtn); }
+        else positiveInput.focus(); // 浏览器不允许读剪贴板时退回手动 Ctrl+V
+      },
+    });
+
     // v3.35：属性标签（#名称#）——点击插入到正向提示词光标处；值在节点面板「变量」行填
     function insertAttrTag(name) {
       const tag = "#" + name + "#";
@@ -393,7 +433,14 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
         h("div", { class: "vpl-row vpl-row-tight" }, [attrInput]),
         attrPaletteChips,
       ]),
-      field("正向提示词", positiveInput, "（{a|b|c} 随机选一；#名字# / {名字:男|女} 在节点面板固定取值）"),
+      h("div", { class: "vpl-field" }, [
+        h("label", { class: "vpl-label" }, [
+          "正向提示词",
+          h("span", { class: "vpl-hint" }, "（{a|b|c} 随机选一；#名字# / {名字:男|女} 在节点面板固定取值）"),
+          h("span", { class: "vpl-label-actions" }, [copyPosBtn, pastePosBtn]),
+        ]),
+        positiveInput,
+      ]),
       field("负向提示词", negativeInput),
       h("div", { class: "vpl-field-row" }, [
         h("div", { class: "vpl-field vpl-field-grow" }, [
