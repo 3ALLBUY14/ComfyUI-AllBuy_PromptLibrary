@@ -1,7 +1,7 @@
 // ComfyUI-AllBuy_PromptLibrary 主前端逻辑
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { openEditor, uid, COLOR_PRESETS } from "./editor_dialog.js";
+import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
@@ -2115,9 +2115,8 @@ function startController(node) {
         alert("库数据尚未加载完成，无法新建。请截图浏览器控制台里 [VPL] 开头的日志反馈。");
         return;
       }
-      // v3.42：新建组自动配色——按现有组数循环取预设色，相邻新建组颜色不重样
-      const autoColor = COLOR_PRESETS[(state.libraryData.groups.length || 0) % COLOR_PRESETS.length];
-      const res = await openEditor(null, { isNew: true, categories: existingCategories(), palette: buildPalette(), defaultColor: autoColor });
+      // 新建组配色改由编辑器真随机生成（openEditor 内 randomColor），相邻组不再循环预设色
+      const res = await openEditor(null, { isNew: true, categories: existingCategories(), palette: buildPalette() });
       if (!res) return;
       const g = res.group;
       state.libraryData.groups.push(g);

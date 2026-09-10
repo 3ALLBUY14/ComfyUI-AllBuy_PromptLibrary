@@ -18,6 +18,24 @@ const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_PASTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>';
+const ICON_DICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/></svg>';
+
+// hsl → #rrggbb（标准公式）
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return "#" + [f(0), f(8), f(4)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+// 真随机取色：全色相随机，饱和/亮度限定在玻璃 UI 的舒适区间（避免脏色和看不清的深浅）
+export function randomColor() {
+  return hslToHex(
+    Math.floor(Math.random() * 360),
+    58 + Math.floor(Math.random() * 22),
+    52 + Math.floor(Math.random() * 16),
+  );
+}
 
 // 剪贴板：写优先 Clipboard API，失败（http 非安全源等）退回 execCommand；读没有可靠降级，失败返回 null
 async function copyToClipboard(text) {
@@ -60,7 +78,7 @@ function h(tag, props = {}, children = []) {
   return el;
 }
 
-export function openEditor(group, { isNew = false, categories = [], palette = {}, defaultColor = "" } = {}) {
+export function openEditor(group, { isNew = false, categories = [], palette = {} } = {}) {
   return new Promise((resolve) => {
     const data = group
       ? JSON.parse(JSON.stringify(group))
@@ -71,8 +89,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           positive: "",
           negative: "",
           note: "",
-          // v3.42：新建时允许调用方传入自动配色（循环取色），未传则用第一个预设
-          color: defaultColor || COLOR_PRESETS[0],
+          // 新建即真随机取色（全色相），替代 v3.42 的预设循环配色
+          color: randomColor(),
           weight: 1.0,
           prefix: "",
           suffix: "",
@@ -236,6 +254,15 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           if (v && !pal.colors.includes(v)) { pal.colors.push(v); renderColorRow(); }
         },
       }, "加入"));
+      colorRow.appendChild(h("button", {
+        class: "vpl-btn vpl-btn-sm vpl-chip-add", title: "随机换一个颜色（全色相真随机）",
+        html: ICON_DICE,
+        onclick: () => {
+          data.color = randomColor();
+          highlightColor();
+          colorPicker.value = data.color;
+        },
+      }, "随机"));
     }
     const colorRow = h("div", { class: "vpl-color-row" });
     colorPicker.addEventListener("input", () => { data.color = colorPicker.value; highlightColor(); });
