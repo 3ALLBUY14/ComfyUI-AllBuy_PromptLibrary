@@ -1,0 +1,279 @@
+{
+ "id": "allbuy-vpl-example-01-minimal",
+ "revision": 0,
+ "last_node_id": 6,
+ "last_link_id": 6,
+ "nodes": [
+  {
+   "id": 4,
+   "type": "Note",
+   "pos": [
+    480,
+    520
+   ],
+   "size": [
+    360,
+    270
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "version": "7.8",
+     "input_ue_unconnectable": {}
+    }
+   },
+   "widgets_values": [
+    "01 · 最小可用\n\n1. 节点上点「＋ 新建提示词组」，把大段提示词贴进正向框，保存。\n2. 勾选卡片：勾哪组生效哪组，多选按顺序自动合并。\n3. 正提示词 → CLIPTextEncode（正向），负提示词 → CLIPTextEncode（负向）。\n4. 两个 CLIPTextEncode 的 clip 输入口请自行接你的模型加载器（Checkpoint/UNET Loader 等）。\n5. footer 的 🎲 按钮可把通配符 {a|b} 固定成可复现的种子。"
+   ],
+   "widgets_values_named": {
+    "text": "01 · 最小可用\n\n1. 节点上点「＋ 新建提示词组」，把大段提示词贴进正向框，保存。\n2. 勾选卡片：勾哪组生效哪组，多选按顺序自动合并。\n3. 正提示词 → CLIPTextEncode（正向），负提示词 → CLIPTextEncode（负向）。\n4. 两个 CLIPTextEncode 的 clip 输入口请自行接你的模型加载器（Checkpoint/UNET Loader 等）。\n5. footer 的 🎲 按钮可把通配符 {a|b} 固定成可复现的种子。"
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 1,
+   "type": "PromptLibrary",
+   "pos": [
+    80,
+    180
+   ],
+   "size": [
+    380,
+    606
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "选中卡片",
+     "name": "选中卡片",
+     "type": "STRING",
+     "widget": {
+      "name": "选中卡片"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "前缀",
+     "name": "前缀",
+     "shape": 7,
+     "type": "STRING",
+     "widget": {
+      "name": "前缀"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "忽略权重",
+     "name": "忽略权重",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "忽略权重"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "变量取值",
+     "name": "变量取值",
+     "shape": 7,
+     "type": "STRING",
+     "widget": {
+      "name": "变量取值"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "正提示词",
+     "name": "正提示词",
+     "type": "STRING",
+     "links": [
+      1,
+      5
+     ]
+    },
+    {
+     "localized_name": "负提示词",
+     "name": "负提示词",
+     "type": "STRING",
+     "links": [
+      2,
+      6
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "PromptLibrary",
+    "_vpl": {
+     "library": "{\"source\":\"user\",\"name\":\"default\"}",
+     "selected_ids": "[\"demo-001\"]",
+     "unselected_ids": "[\"demo-001\",\"demo-002\",\"demo-003\",\"demo-004\",\"demo-005\"]",
+     "separator": ", ",
+     "prepend": "",
+     "append": "",
+     "ignore_weight": false,
+     "library_data": "",
+     "var_values": "{}",
+     "view": "list",
+     "wc_fixed": false,
+     "wc_seed": 0
+    },
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "version": "7.8",
+     "input_ue_unconnectable": {}
+    }
+   },
+   "widgets_values": [
+    ""
+   ],
+   "widgets_values_named": {
+    "vpl_ui": ""
+   },
+   "color": "#d0d6a7",
+   "bgcolor": "#606730",
+   "textcolor": "#000000"
+  },
+  {
+   "id": 6,
+   "type": "easy showAnything",
+   "pos": [
+    480,
+    390
+   ],
+   "size": [
+    360,
+    90
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "输入任何",
+     "localized_name": "输入任何",
+     "name": "anything",
+     "shape": 7,
+     "type": "*",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "label": "输出",
+     "localized_name": "输出",
+     "name": "output",
+     "type": "*",
+     "links": null
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-easy-use",
+    "ver": "271685698b0935c5b0ecca86a58c3817931cd205",
+    "Node name for S&R": "easy showAnything",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    }
+   },
+   "widgets_values": [
+    "static camera, shaky cam, fast jump cuts, handheld shake, distorted perspective"
+   ],
+   "widgets_values_named": {
+    "text": "static camera, shaky cam, fast jump cuts, handheld shake, distorted perspective"
+   }
+  },
+  {
+   "id": 5,
+   "type": "easy showAnything",
+   "pos": [
+    480,
+    180
+   ],
+   "size": [
+    360,
+    160
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "输入任何",
+     "localized_name": "输入任何",
+     "name": "anything",
+     "shape": 7,
+     "type": "*",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "label": "输出",
+     "localized_name": "输出",
+     "name": "output",
+     "type": "*",
+     "links": null
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-easy-use",
+    "ver": "271685698b0935c5b0ecca86a58c3817931cd205",
+    "Node name for S&R": "easy showAnything",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    }
+   },
+   "widgets_values": [
+    "Cinematic slow dolly-in shot, camera smoothly pushing toward the subject, 35mm anamorphic lens, shallow depth of field, subtle parallax between foreground and background, 24fps, natural motion blur, film grain"
+   ],
+   "widgets_values_named": {
+    "text": "Cinematic slow dolly-in shot, camera smoothly pushing toward the subject, 35mm anamorphic lens, shallow depth of field, subtle parallax between foreground and background, 24fps, natural motion blur, film grain"
+   }
+  }
+ ],
+ "links": [
+  [
+   5,
+   1,
+   0,
+   5,
+   0,
+   "STRING"
+  ],
+  [
+   6,
+   1,
+   1,
+   6,
+   0,
+   "STRING"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ue_links": [],
+  "ds": {
+   "scale": 1.4122927695244518,
+   "offset": [
+    19.647199415563044,
+    -30.0788219200807
+   ]
+  },
+  "links_added_by_ue": []
+ },
+ "version": 0.4
+}

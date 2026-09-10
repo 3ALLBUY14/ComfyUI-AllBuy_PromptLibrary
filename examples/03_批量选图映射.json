@@ -1,0 +1,295 @@
+{
+ "id": "allbuy-vpl-example-03-batch-image-mapping",
+ "revision": 0,
+ "last_node_id": 7,
+ "last_link_id": 7,
+ "nodes": [
+  {
+   "id": 4,
+   "type": "PreviewImage",
+   "pos": [
+    590,
+    160
+   ],
+   "size": [
+    360,
+    260
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "图像组",
+     "localized_name": "图像",
+     "name": "images",
+     "type": "IMAGE",
+     "link": 3
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "images",
+     "name": "images",
+     "type": "IMAGE",
+     "links": null
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfy-core",
+    "ver": "0.34.5",
+    "Node name for S&R": "PreviewImage",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "version": "7.8",
+     "input_ue_unconnectable": {}
+    }
+   }
+  },
+  {
+   "id": 6,
+   "type": "easy showAnything",
+   "pos": [
+    590,
+    680
+   ],
+   "size": [
+    360,
+    90
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "输入任何",
+     "localized_name": "输入任何",
+     "name": "anything",
+     "shape": 7,
+     "type": "*",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "label": "输出",
+     "localized_name": "输出",
+     "name": "output",
+     "type": "*",
+     "links": null
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-easy-use",
+    "ver": "271685698b0935c5b0ecca86a58c3817931cd205",
+    "Node name for S&R": "easy showAnything",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    }
+   },
+   "widgets_values": [
+    "static camera, shaky cam, fast jump cuts, handheld shake, distorted perspective"
+   ],
+   "widgets_values_named": {
+    "text": "static camera, shaky cam, fast jump cuts, handheld shake, distorted perspective"
+   }
+  },
+  {
+   "id": 7,
+   "type": "easy showAnything",
+   "pos": [
+    590,
+    470
+   ],
+   "size": [
+    360,
+    160
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "输入任何",
+     "localized_name": "输入任何",
+     "name": "anything",
+     "shape": 7,
+     "type": "*",
+     "link": 6
+    }
+   ],
+   "outputs": [
+    {
+     "label": "输出",
+     "localized_name": "输出",
+     "name": "output",
+     "type": "*",
+     "links": null
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-easy-use",
+    "ver": "271685698b0935c5b0ecca86a58c3817931cd205",
+    "Node name for S&R": "easy showAnything",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "input_ue_unconnectable": {},
+     "version": "7.8"
+    }
+   },
+   "widgets_values": [
+    "Cinematic slow dolly-in shot, camera smoothly pushing toward the subject, 35mm anamorphic lens, shallow depth of field, subtle parallax between foreground and background, 24fps, natural motion blur, film grain"
+   ],
+   "widgets_values_named": {
+    "text": "Cinematic slow dolly-in shot, camera smoothly pushing toward the subject, 35mm anamorphic lens, shallow depth of field, subtle parallax between foreground and background, 24fps, natural motion blur, film grain"
+   }
+  },
+  {
+   "id": 1,
+   "type": "BatchImagePromptSelector",
+   "pos": [
+    80,
+    160
+   ],
+   "size": [
+    480,
+    772
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "库数据",
+     "name": "库数据",
+     "shape": 7,
+     "type": "STRING",
+     "widget": {
+      "name": "库数据"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "图片",
+     "name": "图片",
+     "type": "IMAGE",
+     "links": [
+      3
+     ]
+    },
+    {
+     "localized_name": "正提示词",
+     "name": "正提示词",
+     "type": "STRING",
+     "links": [
+      1,
+      6
+     ]
+    },
+    {
+     "localized_name": "负提示词",
+     "name": "负提示词",
+     "type": "STRING",
+     "links": [
+      2,
+      7
+     ]
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "BatchImagePromptSelector",
+    "_bips": "{\"version\":1,\"folder\":\"\",\"recent_folders\":[],\"mode\":\"image_to_prompts\",\"library_locator\":{\"source\":\"user\",\"name\":\"default\"},\"thumbnail_size\":96,\"view\":\"masonry\",\"sort_by\":\"custom\",\"images\":[],\"links\":[]}",
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "version": "7.8",
+     "input_ue_unconnectable": {}
+    }
+   },
+   "widgets_values": [
+    ""
+   ],
+   "widgets_values_named": {
+    "bips_ui": ""
+   },
+   "color": "#1c2d2d",
+   "bgcolor": "#80afaf",
+   "textcolor": "#FFFFFF"
+  },
+  {
+   "id": 5,
+   "type": "Note",
+   "pos": [
+    600,
+    820
+   ],
+   "size": [
+    350,
+    270
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "ue_properties": {
+     "widget_ue_connectable": {},
+     "version": "7.8",
+     "input_ue_unconnectable": {}
+    }
+   },
+   "widgets_values": [
+    "03 · 批量选图反查提示词\n\n1. 工具栏选目录：从 ComfyUI input 下的子目录载入图片。\n2. 选一个提示词库，然后给图片挂提示词组：点卡片上的「＋」，或拖到底部映射面板的组行里。\n3. 输出：图片 batch（按手动排序）+ 所有被引用组的合并提示词 + 结构化映射 JSON。\n4. 分类/分组徽标点击即可改，拖拽 = 排序或归类。\n5. 图片输出接 PreviewImage/VAE Encode，提示词接 CLIPTextEncode（clip 自行接模型加载器）。"
+   ],
+   "widgets_values_named": {
+    "text": "03 · 批量选图反查提示词\n\n1. 工具栏选目录：从 ComfyUI input 下的子目录载入图片。\n2. 选一个提示词库，然后给图片挂提示词组：点卡片上的「＋」，或拖到底部映射面板的组行里。\n3. 输出：图片 batch（按手动排序）+ 所有被引用组的合并提示词 + 结构化映射 JSON。\n4. 分类/分组徽标点击即可改，拖拽 = 排序或归类。\n5. 图片输出接 PreviewImage/VAE Encode，提示词接 CLIPTextEncode（clip 自行接模型加载器）。"
+   },
+   "color": "#432",
+   "bgcolor": "#653"
+  }
+ ],
+ "links": [
+  [
+   3,
+   1,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   6,
+   1,
+   1,
+   7,
+   0,
+   "STRING"
+  ],
+  [
+   7,
+   1,
+   2,
+   6,
+   0,
+   "STRING"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ue_links": [],
+  "ds": {
+   "scale": 0.964614964500003,
+   "offset": [
+    189.6730006959264,
+    185.55398936120704
+   ]
+  },
+  "links_added_by_ue": []
+ },
+ "version": 0.4
+}

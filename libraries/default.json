@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "name": "默认库",
+  "groups": [
+    {
+      "id": "demo-001",
+      "name": "电影感慢推镜头",
+      "category": "镜头运动",
+      "positive": "Cinematic slow dolly-in shot, camera smoothly pushing toward the subject, 35mm anamorphic lens, shallow depth of field, subtle parallax between foreground and background, 24fps, natural motion blur, film grain",
+      "negative": "static camera, shaky cam, fast jump cuts, handheld shake, distorted perspective",
+      "note": "适合人物特写与产品推进，节奏舒缓",
+      "color": "#4A90D9",
+      "weight": 1.0,
+      "prefix": "",
+      "suffix": "",
+      "tags": ["电影感", "推镜"],
+      "cover": ""
+    },
+    {
+      "id": "demo-002",
+      "name": "赛博朋克夜景风格",
+      "category": "视觉风格",
+      "positive": "Cyberpunk night cityscape, neon signs in pink and cyan, rain-soaked streets reflecting lights, dense fog and volumetric haze, holographic advertisements, futuristic architecture, high contrast, teal and orange color grading, ultra detailed",
+      "negative": "daylight, bright sun, pastel colors, low contrast, cartoon, flat lighting",
+      "note": "夜景氛围基底，可与任意主体组合",
+      "color": "#9B59B6",
+      "weight": 1.0,
+      "prefix": "",
+      "suffix": "",
+      "tags": ["赛博朋克", "夜景", "霓虹"],
+      "cover": ""
+    },
+    {
+      "id": "demo-003",
+      "name": "逆光轮廓光",
+      "category": "光影",
+      "positive": "Strong backlight creating a rim light around the subject, golden hour sun low behind, lens flare, glowing edges, soft ambient fill light, volumetric god rays, cinematic lighting",
+      "negative": "flat front lighting, overexposed, no light source, harsh shadows on face",
+      "note": "人物/物体边缘发光效果",
+      "color": "#F1C40F",
+      "weight": 1.0,
+      "prefix": "",
+      "suffix": "",
+      "tags": ["逆光", "轮廓光"],
+      "cover": ""
+    },
+    {
+      "id": "demo-004",
+      "name": "航拍大远景",
+      "category": "镜头运动",
+      "positive": "Aerial drone shot, sweeping wide establishing view, high altitude looking down, slow forward flight revealing vast landscape, smooth gimbal stabilization, epic scale, 4k",
+      "negative": "close-up, indoor, low angle, shaky drone footage",
+      "note": "开场大场景，展示环境",
+      "color": "#27AE60",
+      "weight": 1.0,
+      "prefix": "",
+      "suffix": "",
+      "tags": ["航拍", "远景"],
+      "cover": ""
+    },
+    {
+      "id": "demo-005",
+      "name": "通用负向（视频）",
+      "category": "负向",
+      "positive": "",
+      "negative": "blurry, low quality, jittery motion, flickering, deformed, watermark, text, logo, ugly, duplicate frames, morphing, inconsistent lighting",
+      "note": "通用视频质量负向，建议常驻勾选",
+      "color": "#E74C3C",
+      "weight": 1.0,
+      "prefix": "",
+      "suffix": "",
+      "tags": ["负向", "质量"],
+      "cover": ""
+    }
+  ]
+}
