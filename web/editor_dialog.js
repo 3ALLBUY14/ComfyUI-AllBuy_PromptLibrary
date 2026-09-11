@@ -285,20 +285,23 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     });
     negativeInput.value = data.negative || "";
 
-    // 正向提示词标签行：复制/粘贴整段内容（按钮 hover 浮现；flash 反馈成功）
-    function flashOk(btn) {
-      btn.classList.add("vpl-flash-ok");
-      setTimeout(() => btn.classList.remove("vpl-flash-ok"), 900);
+    // 正向提示词标签行：复制/粘贴整段内容（按钮 hover 浮现；flash 反馈成败）
+    function flash(btn, cls = "vpl-flash-ok") {
+      btn.classList.add(cls);
+      setTimeout(() => btn.classList.remove(cls), 900);
     }
     const copyPosBtn = h("button", {
       class: "vpl-icon-btn", title: "复制正向提示词", html: ICON_COPY,
-      onclick: async () => { if (await copyToClipboard(positiveInput.value)) flashOk(copyPosBtn); },
+      onclick: async () => {
+        if (await copyToClipboard(positiveInput.value)) flash(copyPosBtn);
+        else flash(copyPosBtn, "vpl-flash-fail"); // 写剪贴板失败（非安全源等）给红闪提示
+      },
     });
     const pastePosBtn = h("button", {
       class: "vpl-icon-btn", title: "用剪贴板内容替换正向提示词", html: ICON_PASTE,
       onclick: async () => {
         const t = await readClipboard();
-        if (t) { positiveInput.value = t; flashOk(pastePosBtn); }
+        if (t) { positiveInput.value = t; flash(pastePosBtn); }
         else positiveInput.focus(); // 浏览器不允许读剪贴板时退回手动 Ctrl+V
       },
     });

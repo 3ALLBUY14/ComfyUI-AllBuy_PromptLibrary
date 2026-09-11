@@ -949,8 +949,10 @@
 }
 .vpl-field:hover .vpl-label-actions .vpl-icon-btn,
 .vpl-label-actions .vpl-icon-btn:focus-visible,
-.vpl-label-actions .vpl-icon-btn.vpl-flash-ok { opacity: 1; }
+.vpl-label-actions .vpl-icon-btn.vpl-flash-ok,
+.vpl-label-actions .vpl-icon-btn.vpl-flash-fail { opacity: 1; }
 .vpl-label-actions .vpl-icon-btn.vpl-flash-ok { color: var(--vpl-primary); }
+.vpl-label-actions .vpl-icon-btn.vpl-flash-fail { color: var(--vpl-danger); }
 .vpl-textarea {
   background: var(--vpl-bg-inset);
   color: var(--vpl-text);
