@@ -2402,10 +2402,15 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .vpl-media-col-h { font-size: 12px; color: var(--vpl-text-muted); }
 .vpl-media-col-note { font-size: 11px; color: var(--vpl-text-subtle); line-height: 1.65; }
 /* 大媒体窗：按素材实际宽高比显示（v3.68：frame 静态排版、内容撑高，
-   竖版全高、横版全宽，不再压进固定 16:9）；空态收缩为矮虚线框 */
+   竖版全高、横版全宽，不再压进固定 16:9）；空态收缩为矮虚线框。
+   注意 slot 是 flex 容器，frame 作 flex item 必须显式 width:100%，
+   否则 shrink-to-fit 会让 img/video 的 width:100% 失去基准；
+   v3.69：左列是 flex column，媒体窗必须禁收缩——否则竖版内容一高
+   两个窗就互相挤压变形，靠左列滚动看全 */
+.vpl-editor-media > * { flex-shrink: 0; }
 .vpl-editor-media .vpl-media-slot { min-height: 0; }
 .vpl-editor-media .vpl-media-slot:not(.filled) { min-height: 84px; }
-.vpl-editor-media .vpl-media-frame { position: relative; inset: auto; }
+.vpl-editor-media .vpl-media-frame { position: relative; inset: auto; width: 100%; }
 .vpl-editor-media .vpl-media-frame img,
 .vpl-editor-media .vpl-media-frame video {
   display: block; width: 100%; height: auto; background: #000;

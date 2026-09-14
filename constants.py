@@ -7,7 +7,7 @@ BUILTIN_LIBRARIES_FOLDER = os.path.join(EXTENSION_FOLDER, "libraries")
 
 # 插件版本（前端 videoprompt_library.js 的 PLUGIN_VERSION 必须与此一致；
 # 前端通过 /allbuy_promptlibrary/version 接口对比，不一致说明后端未重启到新版）
-PLUGIN_VERSION = "v3.68"
+PLUGIN_VERSION = "v3.69"
 
 API_PREFIX = "/allbuy_promptlibrary"
 
