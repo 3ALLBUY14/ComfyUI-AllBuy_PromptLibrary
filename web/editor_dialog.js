@@ -447,7 +447,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     // /cover/upload 落盘（后端按组 id 哈希命名）。移除只清字段：旧文件由整库保存时的
     // 孤儿清理回收，所以取消编辑也不会留下错误引用。
     const onCoverApplied = [];
-    function buildMediaSlot({ icon, accept, hint, getFile, posterOf, apply }) {
+    function buildMediaSlot({ kind, icon, accept, hint, getFile, apply }) {
+      const isVideo = kind === "video";
       const slot = h("div", { class: "vpl-media-slot", title: "点击选择；支持拖拽文件到这里" });
       const fileInput = h("input", { type: "file", accept, style: "display:none" });
       const empty = h("div", { class: "vpl-media-empty" }, [
@@ -465,22 +466,27 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
         empty.style.display = name ? "none" : "flex";
         frame.innerHTML = "";
         if (!name) return;
-        // 图槽显示自身；视频槽显示封面（首帧或用户自设图），封面缺失回退图标
-        const poster = posterOf ? posterOf() : name;
-        if (poster) {
-          const img = h("img", { src: `${API}/cover/file?name=${encodeURIComponent(poster)}&w=320`, alt: "" });
-          img.addEventListener("error", () => {
+        if (isVideo) {
+          // 大窗内直接嵌可播放视频（controls 可拖进度/开声）；关闭弹窗随 DOM 回收
+          const v = document.createElement("video");
+          v.controls = true;
+          v.muted = true;
+          v.loop = true;
+          v.preload = "metadata";
+          v.src = `${API}/cover/video?name=${encodeURIComponent(name)}`;
+          v.addEventListener("error", () => { // 文件被手动删过：回退图标占位
             frame.innerHTML = "";
-            if (!posterOf) { // 图槽图片文件真丢了：回退空态；视频槽封面丢了回退图标
-              slot.classList.remove("filled");
-              empty.style.display = "flex";
-            } else {
-              frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
-            }
+            frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
+          });
+          frame.appendChild(v);
+        } else {
+          const img = h("img", { src: `${API}/cover/file?name=${encodeURIComponent(name)}&w=640`, alt: "" });
+          img.addEventListener("error", () => { // 图片文件真丢了：回退空态
+            slot.classList.remove("filled");
+            empty.style.display = "flex";
+            frame.innerHTML = "";
           });
           frame.appendChild(img);
-        } else {
-          frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
         }
       }
       function flashFail(msg) {
@@ -535,23 +541,34 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       refresh();
       return { el: slot, upload, refresh };
     }
+    const vidSlot = buildMediaSlot({
+      kind: "video", icon: ICON_FILM, accept: COVER_VID_ACCEPT,
+      hint: "点击选择视频（mp4 / webm / mov…），或拖拽到这里",
+      getFile: () => data.coverVideo,
+      apply: (j) => {
+        data.coverVideo = j.cover_video || "";
+        if (j.cover) data.cover = j.cover; // 后端抽的首帧自动当预览图
+      },
+    });
     const imgSlot = buildMediaSlot({
-      icon: ICON_IMAGE, accept: COVER_IMG_ACCEPT,
+      kind: "image", icon: ICON_IMAGE, accept: COVER_IMG_ACCEPT,
       hint: "点击选择图片，或拖拽 / Ctrl+V 粘贴",
       getFile: () => data.cover,
       apply: (j) => { data.cover = j.cover || ""; },
     });
-    const vidSlot = buildMediaSlot({
-      icon: ICON_FILM, accept: COVER_VID_ACCEPT,
-      hint: "点击选择视频（mp4 / webm / mov…）",
-      getFile: () => data.coverVideo,
-      posterOf: () => data.cover, // 封面图（视频首帧或用户自设）铺在视频槽里
-      apply: (j) => {
-        data.coverVideo = j.cover_video || "";
-        if (j.cover) data.cover = j.cover; // 后端抽的首帧自动当封面
-      },
-    });
-    onCoverApplied.push(imgSlot.refresh, vidSlot.refresh);
+    onCoverApplied.push(vidSlot.refresh, imgSlot.refresh);
+
+    // v3.67：左列媒体窗（上视频、下图），表单中原「预览图 & 预览视频」字段整体移除
+    const mediaCol = h("div", { class: "vpl-editor-media" }, [
+      h("div", { class: "vpl-media-col-h" }, [
+        "预览效果",
+        h("span", { class: "vpl-hint" }, "（帮未来的你想起这组是什么画面）"),
+      ]),
+      vidSlot.el,
+      imgSlot.el,
+      h("div", { class: "vpl-media-col-note" },
+        "只传视频时自动取首帧当预览图；两窗可独立更换/移除。文件存 input/allbuy_covers/，随库引用，不占提示词输出。"),
+    ]);
 
     function field(label, input, hint) {
       return h("div", { class: "vpl-field" }, [
@@ -611,13 +628,6 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
         h("div", { class: "vpl-palette-hint" }, "标签库（点击加入此卡 · × 删除建议）"),
         tagPaletteChips,
       ]),
-      h("div", { class: "vpl-field" }, [
-        h("label", { class: "vpl-label" }, [
-          "预览图 & 预览视频",
-          h("span", { class: "vpl-hint" }, "（示例效果；只传视频时自动取首帧当封面，旧文件在保存时自动回收）"),
-        ]),
-        h("div", { class: "vpl-media-row" }, [imgSlot.el, vidSlot.el]),
-      ]),
     ]);
 
     // ---- 底部按钮 ----
@@ -653,8 +663,9 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     const footer = h("div", { class: "vpl-dialog-footer" }, [cancelBtn, saveBtn]);
 
     // v3.33：footer 挂 dialog 直属（body flex:1 滚动），固定悬浮在弹窗底部不随内容滚动
+    // v3.67：左右布局——左媒体窗列 + 右表单列（各自滚动；窄窗口由 CSS 降级单列）
     dialog.appendChild(title);
-    dialog.appendChild(h("div", { class: "vpl-dialog-body" }, [form]));
+    dialog.appendChild(h("div", { class: "vpl-dialog-body vpl-editor-split" }, [mediaCol, form]));
     dialog.appendChild(footer);
     overlay.appendChild(dialog);
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(null); });
