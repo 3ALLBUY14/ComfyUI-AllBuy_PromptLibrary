@@ -2421,3 +2421,31 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 }
 .vpl-media-slot.filled:hover .vpl-media-x { display: flex; }
 .vpl-media-x:hover { background: var(--vpl-danger, #fb7185); }
+
+/* ---- v3.67 编辑器左右布局：左媒体窗列 + 右表单列 ---- */
+.vpl-dialog.vpl-editor { max-width: min(1060px, 94vw); }
+.vpl-editor-split {
+  display: grid; grid-template-columns: 430px minmax(0, 1fr);
+  overflow: hidden; padding: 0; gap: 0; /* 覆盖 .vpl-dialog-body 的 padding/滚动：改两列各自滚动 */
+}
+.vpl-editor-media {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 16px; overflow-y: auto;
+  border-right: 1px solid var(--vpl-border);
+  background: rgba(0, 0, 0, 0.12);
+}
+.vpl-editor-split > form { padding: 16px 18px; overflow-y: auto; min-width: 0; }
+.vpl-media-col-h { font-size: 12px; color: var(--vpl-text-muted); }
+.vpl-media-col-note { font-size: 11px; color: var(--vpl-text-subtle); line-height: 1.65; }
+/* 大媒体窗：有内容撑成 16:9 全宽（≈240px 高），空态收缩为矮虚线框 */
+.vpl-editor-media .vpl-media-slot { min-height: 0; }
+.vpl-editor-media .vpl-media-slot.filled { aspect-ratio: 16 / 9; }
+.vpl-editor-media .vpl-media-slot:not(.filled) { min-height: 84px; }
+.vpl-editor-media .vpl-media-frame video {
+  display: block; width: 100%; height: 100%;
+  object-fit: contain; background: #000;
+}
+@media (max-width: 900px) {
+  .vpl-editor-split { grid-template-columns: 1fr !important; overflow-y: auto !important; }
+  .vpl-editor-media { border-right: none; border-bottom: 1px solid var(--vpl-border); overflow: visible; }
+}
