@@ -351,7 +351,9 @@ async def cover_upload(request):
             name = await asyncio.to_thread(cover.save_image, group_id, bytes(buf))
             return web.json_response({"ok": True, "cover": name, "cover_video": None})
         import tempfile
-        with tempfile.NamedTemporaryFile(suffix=upload_ext or ".mp4", delete=False) as tmp:
+        # 临时文件必须与目标同目录（跨盘符 os.replace 会 WinError 17）
+        with tempfile.NamedTemporaryFile(suffix=upload_ext or ".mp4", delete=False,
+                                         dir=cover.covers_root()) as tmp:
             tmp.write(bytes(buf))
             tmp_path = tmp.name
         video_name, cover_name = await asyncio.to_thread(

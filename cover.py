@@ -89,7 +89,9 @@ def save_video(group_id, src_path, orig_ext):
         ext = ".mp4"
     video_name = key + ext
     target = checked_path(video_name)
-    pathlib.Path(src_path).replace(target)
+    # shutil.move：跨盘符时 os.replace 会 WinError 17（调用方应已同盘，此处防御）
+    import shutil
+    shutil.move(src_path, str(target))
 
     cover_name = None
     try:
