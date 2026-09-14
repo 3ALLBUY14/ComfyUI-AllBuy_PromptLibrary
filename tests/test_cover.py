@@ -8,6 +8,7 @@ import importlib
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 
@@ -97,17 +98,29 @@ class TestCover(unittest.TestCase):
         keep_vid, keep_vid_cover = cover.save_video("b", self._make_tiny_mp4(), ".mp4")
         orphan = cover.cover_key("dead") + ".jpg"
         cover.checked_path(orphan).write_bytes(b"x")
+        fresh_orphan = cover.cover_key("fresh") + ".jpg"
+        cover.checked_path(fresh_orphan).write_bytes(b"x")
+        # 新上传保护窗口内的孤儿不回收：把 mtime 回拨越过窗口才参与清理
+        old = time.time() - 400
+        os.utime(cover.checked_path(orphan), (old, old))
         lib = {"groups": [
             {"id": "a", "cover": keep_img},
             {"id": "b", "coverVideo": keep_vid, "cover": keep_vid_cover},
             {"id": "c"},  # 无封面字段
         ]}
         removed = cover.prune_orphans(lib)
-        self.assertEqual(removed, 1)
+        self.assertEqual(removed, 1)  # 只回收过期的孤儿，新鲜孤儿保留
+        self.assertFalse(os.path.isfile(cover.checked_path(orphan)))
+        self.assertTrue(os.path.isfile(cover.checked_path(fresh_orphan)))
         self.assertTrue(os.path.isfile(cover.checked_path(keep_img)))
         self.assertTrue(os.path.isfile(cover.checked_path(keep_vid)))
         self.assertTrue(os.path.isfile(cover.checked_path(keep_vid_cover)))
-        self.assertFalse(os.path.isfile(cover.checked_path(orphan)))
+
+        lib2 = {"groups": [{"id": "a", "cover": keep_img}]}
+        os.utime(cover.checked_path(keep_vid), (old, old))
+        os.utime(cover.checked_path(keep_vid_cover), (old, old))
+        removed2 = cover.prune_orphans(lib2)
+        self.assertEqual(removed2, 2)  # e2e-2 的视频+封面不再被引用，过期后回收
 
     def _make_tiny_mp4(self):
         cv2 = __import__("cv2")

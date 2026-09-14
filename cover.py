@@ -6,6 +6,7 @@
 import hashlib
 import pathlib
 import re
+import time
 
 from . import media_asset
 
@@ -116,6 +117,9 @@ def prune_orphans(library_data):
 
     cover/coverVideo 字段即文件名，引用集合 = 全部组两个字段的并集。
     删除组、编辑时换图/换视频留下的旧文件都在下一次保存时回收。
+    ponytail: 新上传 <5 分钟的文件不删——上传后字段尚未落库的窗口里，
+    任何并发的旧内存态整库保存（如另一标签页点星标）都会让文件短暂
+    "无引用"，此时直接删会把刚上传的封面误删；5 分钟后下一次保存再回收。
     """
     refs = set()
     for g in ((library_data or {}).get("groups") or []):
@@ -126,12 +130,15 @@ def prune_orphans(library_data):
             if v:
                 refs.add(v)
     root = pathlib.Path(covers_root())
+    now = time.time()
     removed = 0
     for entry in root.iterdir():
         fn = entry.name
         if fn in refs or not _COVER_NAME_RE.fullmatch(fn):
             continue
         try:
+            if now - entry.stat().st_mtime < 300:
+                continue
             checked_path(fn).unlink()
             removed += 1
         except (ValueError, OSError):
