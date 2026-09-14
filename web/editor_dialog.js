@@ -461,19 +461,33 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       function refresh() {
         const name = getFile();
         slot.classList.toggle("filled", !!name);
+        empty.style.display = name ? "none" : "flex";
         frame.innerHTML = "";
         if (!name) return;
-        const poster = posterOf && posterOf();
+        // 图槽显示自身；视频槽显示封面（首帧或用户自设图），封面缺失回退图标
+        const poster = posterOf ? posterOf() : name;
         if (poster) {
           const img = h("img", { src: `${API}/cover/file?name=${encodeURIComponent(poster)}&w=320`, alt: "" });
-          img.addEventListener("error", () => { slot.classList.remove("filled"); frame.innerHTML = ""; });
+          img.addEventListener("error", () => {
+            frame.innerHTML = "";
+            if (!posterOf) { // 图槽图片文件真丢了：回退空态；视频槽封面丢了回退图标
+              slot.classList.remove("filled");
+              empty.style.display = "flex";
+            } else {
+              frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
+            }
+          });
           frame.appendChild(img);
         } else {
           frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
         }
       }
+      function flashFail() {
+        slot.classList.add("vpl-flash-fail"); // 上传失败红闪（与复制失败同款提示），不静默
+        setTimeout(() => slot.classList.remove("vpl-flash-fail"), 900);
+      }
       async function upload(file) {
-        if (!file) return;
+        if (!file) { flashFail(); return; } // 拖入的不是本地文件（网页图片/文本等）
         const fd = new FormData();
         fd.append("group_id", data.id);
         fd.append("file", file, file.name || (accept.includes(".mp4") ? "clip.mp4" : "paste.jpg"));
@@ -486,8 +500,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           refresh();
           onCoverApplied.forEach((fn) => fn()); // 视频首帧封面可能联动图槽
         } catch (e) {
-          slot.classList.add("vpl-flash-fail"); // 上传失败红闪（与复制失败同款提示），不静默
-          setTimeout(() => slot.classList.remove("vpl-flash-fail"), 900);
+          console.warn("[VPL] 封面上传失败：", e);
+          flashFail();
         } finally {
           slot.classList.remove("busy");
         }
@@ -507,6 +521,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       slot.addEventListener("dragleave", () => slot.classList.remove("dragover"));
       slot.addEventListener("drop", (e) => {
         e.preventDefault();
+        e.stopPropagation(); // 不让 ComfyUI 的全局 drop（工作流/图片加载）接手
         slot.classList.remove("dragover");
         upload(e.dataTransfer.files && e.dataTransfer.files[0]);
       });
