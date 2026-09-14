@@ -200,6 +200,20 @@ def list_libraries():
     return result
 
 
+def all_library_paths():
+    """全部库 JSON 的绝对路径（内置 + 用户），供封面孤儿回收聚合跨库引用集。"""
+    paths = []
+    for folder in (constants.BUILTIN_LIBRARIES_FOLDER, get_user_libraries_folder()):
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            continue
+        for fn in names:
+            if fn.endswith(".json"):  # .backup / .tmp 后缀天然不匹配
+                paths.append(os.path.join(folder, fn))
+    return paths
+
+
 def create_library(name):
     """在用户目录创建新库，返回 locator。"""
     safe = _sanitize_filename(name)

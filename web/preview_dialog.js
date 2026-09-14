@@ -20,6 +20,7 @@ function buildPreviewMedia(group) {
     v.loop = true;
     v.playsInline = true;
     v.preload = "metadata";
+    v.addEventListener("error", () => v.remove()); // 封面视频丢失时不挡下面的文本预览
     if (posterName) v.poster = `${API}/cover/file?name=${encodeURIComponent(posterName)}&w=960`;
     return v;
   }
