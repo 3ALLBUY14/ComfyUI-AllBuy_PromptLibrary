@@ -3,6 +3,7 @@
 采用 ComfyUI 社区标准做法：模块导入时直接通过 PromptServer.instance.routes
 注册路由（此时 server 已就绪），避免延迟注册被 try/except 静默吞掉导致 404。
 """
+import asyncio
 import io
 import math
 import os
@@ -12,7 +13,7 @@ from collections import OrderedDict
 from aiohttp import web
 from PIL import Image
 
-from . import library_store, constants, random_draw, batch_image_node, media_asset
+from . import library_store, constants, random_draw, batch_image_node, media_asset, cover
 
 P = constants.API_PREFIX
 
@@ -108,6 +109,7 @@ async def save_library(request):
         return _json_error("缺少 data")
     try:
         library_store.save_library(locator, data)
+        cover.prune_orphans(data)  # v3.64：保存后回收不再被任何组引用的封面文件
         return web.json_response({"ok": True})
     except PermissionError as e:
         return _json_error(e, 403)
@@ -247,6 +249,36 @@ async def list_images(request):
         return _json_error(e)
 
 
+_IMAGE_MIME = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".webp": "image/webp", ".bmp": "image/bmp", ".gif": "image/gif",
+    ".tif": "image/tiff", ".tiff": "image/tiff",
+}
+
+
+def _image_response(path, w):
+    """带 w 参数时返回压缩 JPEG 缩略图（LRU），失败回退原图；否则按扩展名返回原图。"""
+    if w and w > 0:
+        try:
+            return web.Response(
+                body=_make_thumb(path, w), content_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        except Exception as e:  # noqa: BLE001
+            # 缩略图生成失败（损坏/异常格式）回退原图
+            print(f"[AllBuy_PromptLibrary] 缩略图生成失败，回退原图：{path} - {e}")
+    ext = os.path.splitext(path)[1].lower()
+    mime = _IMAGE_MIME.get(ext, "application/octet-stream")
+    try:
+        with open(path, "rb") as f:
+            return web.Response(
+                body=f.read(), content_type=mime,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+    except Exception as e:  # noqa: BLE001
+        return _json_error(e, 500)
+
+
 @_get("/image")
 async def serve_image(request):
     """按绝对路径返回图片字节，供前端渲染缩略图（绕过 ComfyUI /view 的子目录限制）。
@@ -263,33 +295,100 @@ async def serve_image(request):
         w = int(request.query.get("w", "0") or 0)
     except ValueError:
         w = 0
+    return _image_response(path, w)
 
-    if w and w > 0:
-        try:
-            data = _make_thumb(path, w)
-            return web.Response(
-                body=data, content_type="image/jpeg",
-                headers={"Cache-Control": "public, max-age=86400"},
-            )
-        except Exception as e:  # noqa: BLE001
-            # 缩略图生成失败（损坏/异常格式）回退原图
-            print(f"[AllBuy_PromptLibrary] 缩略图生成失败，回退原图：{path} - {e}")
 
-    ext = os.path.splitext(path)[1].lower()
-    mime = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".webp": "image/webp", ".bmp": "image/bmp", ".gif": "image/gif",
-        ".tif": "image/tiff", ".tiff": "image/tiff",
-    }.get(ext, "application/octet-stream")
+# ---------------------------------------------------------------------------
+# 提示词组封面端点（v3.64）：预览图 / 预览视频
+# 文件名由后端按 group_id 哈希生成（cover.py），库 JSON 只存文件名
+# ---------------------------------------------------------------------------
+_COVER_IMAGE_MAX = 32 * 1024 * 1024
+
+
+@_post("/cover/upload")
+async def cover_upload(request):
+    """封面上传（multipart: group_id + file）。图→重编码 JPEG；视频→流式落盘+抽首帧当封面。
+
+    图片返回 {cover: "<hash>.jpg"}；视频返回 {cover: "<hash>.jpg"|null, cover_video: "<hash>.ext"}。
+    cv2 缺失或首帧抽取失败时 cover 为 null，前端回退占位图标。
+    """
     try:
-        with open(path, "rb") as f:
-            data = f.read()
-        return web.Response(
-            body=data, content_type=mime,
-            headers={"Cache-Control": "public, max-age=86400"},
-        )
+        reader = await request.multipart()
+    except Exception:  # noqa: BLE001
+        return _json_error("请求不是 multipart/form-data")
+    group_id = ""
+    upload_ext = ""
+    kind = ""
+    buf = bytearray()
+    tmp_path = None
+    try:
+        async for part in reader:
+            if part.name == "group_id":
+                group_id = (await part.text()).strip()
+            elif part.name == "file":
+                upload_ext = os.path.splitext(part.filename or "")[1].lower()
+                if upload_ext in media_asset.IMAGE_EXTS:
+                    kind = "image"
+                    limit = _COVER_IMAGE_MAX
+                elif upload_ext in media_asset.VIDEO_EXTS:
+                    kind = "video"
+                    limit = cover.VIDEO_MAX_BYTES
+                else:
+                    return _json_error(f"不支持的文件类型: {upload_ext or '(无扩展名)'}")
+                while True:
+                    chunk = await part.read_chunk(65536)
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+                    if len(buf) > limit:
+                        label = "图片过大（上限 32MB）" if kind == "image" else "视频过大（上限 200MB）"
+                        return _json_error(label)
+        if not group_id:
+            return _json_error("缺少 group_id")
+        if not kind:
+            return _json_error("缺少 file 字段")
+        if kind == "image":
+            name = await asyncio.to_thread(cover.save_image, group_id, bytes(buf))
+            return web.json_response({"ok": True, "cover": name, "cover_video": None})
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=upload_ext or ".mp4", delete=False) as tmp:
+            tmp.write(bytes(buf))
+            tmp_path = tmp.name
+        video_name, cover_name = await asyncio.to_thread(
+            cover.save_video, group_id, tmp_path, upload_ext)
+        return web.json_response({"ok": True, "cover": cover_name, "cover_video": video_name})
+    except ValueError as e:
+        return _json_error(e)
     except Exception as e:  # noqa: BLE001
-        return _json_error(e, 500)
+        return _json_error(f"封面上传失败：{e}", 500)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@_get("/cover/file")
+async def cover_file(request):
+    """返回封面图（name 为 cover 字段里的文件名，白名单校验在 cover.resolve_cover_name）。"""
+    path = cover.resolve_cover_name(request.query.get("name", ""))
+    if not path:
+        return web.Response(status=404, text="not found")
+    try:
+        w = int(request.query.get("w", "0") or 0)
+    except ValueError:
+        w = 0
+    return _image_response(path, w)
+
+
+@_get("/cover/video")
+async def cover_video(request):
+    """返回封面视频（FileResponse 自带 Range，前端 <video> 可拖进度）。"""
+    path = cover.resolve_cover_name(request.query.get("name", ""))
+    if not path or os.path.splitext(path)[1].lower() not in media_asset.VIDEO_EXTS:
+        return web.Response(status=404, text="not found")
+    return web.FileResponse(path, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @_get("/media/thumb")

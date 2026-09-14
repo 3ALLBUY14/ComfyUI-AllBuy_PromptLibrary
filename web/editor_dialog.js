@@ -19,6 +19,12 @@ const ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_PASTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>';
 const ICON_DICE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" ry="3"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" stroke="none"/></svg>';
+const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+const ICON_FILM = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>';
+
+const API = "/allbuy_promptlibrary";
+const COVER_IMG_ACCEPT = ".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff";
+const COVER_VID_ACCEPT = ".mp4,.mov,.webm,.mkv,.avi,.m4v,.mpg,.mpeg";
 
 // hsl → #rrggbb（标准公式）
 function hslToHex(h, s, l) {
@@ -96,6 +102,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           suffix: "",
           tags: [],
           cover: "",
+          coverVideo: "",
         };
     // 兼容旧数据：group.category 单字符串 → categories 数组
     if (typeof data.category === "string" && !Array.isArray(data.categories)) {
@@ -436,6 +443,94 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     }
     renderTagPalette();
 
+    // v3.64：预览图 / 预览视频字段——文件名存 data.cover / data.coverVideo，实际文件经
+    // /cover/upload 落盘（后端按组 id 哈希命名）。移除只清字段：旧文件由整库保存时的
+    // 孤儿清理回收，所以取消编辑也不会留下错误引用。
+    const onCoverApplied = [];
+    function buildMediaSlot({ icon, accept, hint, getFile, posterOf, apply }) {
+      const slot = h("div", { class: "vpl-media-slot", title: "点击选择；支持拖拽文件到这里" });
+      const fileInput = h("input", { type: "file", accept, style: "display:none" });
+      const empty = h("div", { class: "vpl-media-empty" }, [
+        h("span", { class: "vpl-media-empty-ico", html: icon }),
+        h("span", {}, hint),
+      ]);
+      const frame = h("div", { class: "vpl-media-frame" });
+      const xBtn = h("span", { class: "vpl-media-x", title: "移除" }, "×");
+      slot.append(empty, frame, xBtn, fileInput);
+
+      function refresh() {
+        const name = getFile();
+        slot.classList.toggle("filled", !!name);
+        frame.innerHTML = "";
+        if (!name) return;
+        const poster = posterOf && posterOf();
+        if (poster) {
+          const img = h("img", { src: `${API}/cover/file?name=${encodeURIComponent(poster)}&w=320`, alt: "" });
+          img.addEventListener("error", () => { slot.classList.remove("filled"); frame.innerHTML = ""; });
+          frame.appendChild(img);
+        } else {
+          frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
+        }
+      }
+      async function upload(file) {
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("group_id", data.id);
+        fd.append("file", file, file.name || (accept.includes(".mp4") ? "clip.mp4" : "paste.jpg"));
+        slot.classList.add("busy");
+        try {
+          const res = await fetch(API + "/cover/upload", { method: "POST", body: fd });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok || !j.ok) throw new Error(j.error || "HTTP " + res.status);
+          apply(j);
+          refresh();
+          onCoverApplied.forEach((fn) => fn()); // 视频首帧封面可能联动图槽
+        } catch (e) {
+          slot.classList.add("vpl-flash-fail"); // 上传失败红闪（与复制失败同款提示），不静默
+          setTimeout(() => slot.classList.remove("vpl-flash-fail"), 900);
+        } finally {
+          slot.classList.remove("busy");
+        }
+      }
+      slot.addEventListener("click", (e) => {
+        if (e.target === xBtn) return;
+        fileInput.click();
+      });
+      fileInput.addEventListener("change", () => { upload(fileInput.files[0]); fileInput.value = ""; });
+      xBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        apply({ cover: null, cover_video: null });
+        refresh();
+        onCoverApplied.forEach((fn) => fn());
+      });
+      slot.addEventListener("dragover", (e) => { e.preventDefault(); slot.classList.add("dragover"); });
+      slot.addEventListener("dragleave", () => slot.classList.remove("dragover"));
+      slot.addEventListener("drop", (e) => {
+        e.preventDefault();
+        slot.classList.remove("dragover");
+        upload(e.dataTransfer.files && e.dataTransfer.files[0]);
+      });
+      refresh();
+      return { el: slot, upload, refresh };
+    }
+    const imgSlot = buildMediaSlot({
+      icon: ICON_IMAGE, accept: COVER_IMG_ACCEPT,
+      hint: "点击选择图片，或拖拽 / Ctrl+V 粘贴",
+      getFile: () => data.cover,
+      apply: (j) => { data.cover = j.cover || ""; },
+    });
+    const vidSlot = buildMediaSlot({
+      icon: ICON_FILM, accept: COVER_VID_ACCEPT,
+      hint: "点击选择视频（mp4 / webm / mov…）",
+      getFile: () => data.coverVideo,
+      posterOf: () => data.cover, // 封面图（视频首帧或用户自设）铺在视频槽里
+      apply: (j) => {
+        data.coverVideo = j.cover_video || "";
+        if (j.cover) data.cover = j.cover; // 后端抽的首帧自动当封面
+      },
+    });
+    onCoverApplied.push(imgSlot.refresh, vidSlot.refresh);
+
     function field(label, input, hint) {
       return h("div", { class: "vpl-field" }, [
         h("label", { class: "vpl-label" }, [label, hint ? h("span", { class: "vpl-hint" }, hint) : null]),
@@ -494,6 +589,13 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
         h("div", { class: "vpl-palette-hint" }, "标签库（点击加入此卡 · × 删除建议）"),
         tagPaletteChips,
       ]),
+      h("div", { class: "vpl-field" }, [
+        h("label", { class: "vpl-label" }, [
+          "预览图 & 预览视频",
+          h("span", { class: "vpl-hint" }, "（示例效果；只传视频时自动取首帧当封面，旧文件在保存时自动回收）"),
+        ]),
+        h("div", { class: "vpl-media-row" }, [imgSlot.el, vidSlot.el]),
+      ]),
     ]);
 
     // ---- 底部按钮 ----
@@ -534,6 +636,11 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     dialog.appendChild(footer);
     overlay.appendChild(dialog);
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(null); });
+    // v3.64：Ctrl+V 粘贴截图直接当预览图（只接管图片文件粘贴，文本粘贴不受影响）
+    overlay.addEventListener("paste", (e) => {
+      const img = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
+      if (img) { e.preventDefault(); imgSlot.upload(img); }
+    });
     document.body.appendChild(overlay);
 
     nameInput.addEventListener("input", () => nameInput.classList.remove("vpl-input-error"));

@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.63"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.64"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -75,6 +75,70 @@ const ICONS = {
   // v3.45：合并结果弹窗预览按钮
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
+
+// v3.64：封面缩略图（列表行首 / 卡片横幅共用）。hover 缩略图本身才挂 <video>：
+// 懒加载 + canplay 再显示（避免首帧黑块）+ 离开即 pause/卸载回收；onerror 与
+// 2.5s 超时兜底（动画事件必须超时兜底的既定铁律）。无 cover 且无 coverVideo
+// 返回 null（行内零占位，维持旧库观感）。点击缩略图直接开预览弹窗。
+function buildCoverThumb(g, extraCls) {
+  const videoName = g.coverVideo || "";
+  const posterName = g.cover || "";
+  if (!videoName && !posterName) return null;
+  const el = h("div", {
+    class: "vpl-thumb" + (extraCls ? " " + extraCls : ""),
+    title: videoName ? "预览视频（悬停播放 · 点击查看大图）" : "预览图（点击查看大图）",
+  });
+  if (posterName) {
+    const img = h("img", {
+      class: "vpl-thumb-img",
+      src: `${API}/cover/file?name=${encodeURIComponent(posterName)}&w=160`,
+      alt: "",
+    });
+    img.addEventListener("error", () => img.remove()); // 封面文件被手动删过：回退占位底色
+    el.appendChild(img);
+  } else {
+    el.appendChild(h("span", { class: "vpl-thumb-ph", html: ICONS.eye }));
+  }
+  if (videoName) {
+    el.appendChild(h("span", { class: "vpl-thumb-badge" }, "▶"));
+    let video = null;
+    let gone = false;
+    const teardown = () => {
+      gone = true;
+      if (video) {
+        try { video.pause(); video.removeAttribute("src"); video.load(); } catch (e) { /* ignore */ }
+        video.remove();
+        video = null;
+      }
+      el.classList.remove("playing");
+    };
+    el.addEventListener("mouseenter", () => {
+      gone = false;
+      video = document.createElement("video");
+      video.className = "vpl-thumb-video";
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.preload = "none";
+      video.src = `${API}/cover/video?name=${encodeURIComponent(videoName)}`;
+      el.appendChild(video);
+      const ready = new Promise((res) => {
+        video.oncanplay = () => res(true);
+        video.onerror = () => res(false);
+        setTimeout(() => res(false), 2500);
+      });
+      ready.then((ok) => {
+        if (!ok || gone || !video) { teardown(); return; }
+        el.classList.add("playing");
+        video.classList.add("on");
+        video.play().catch(() => { /* 自动播放被拦时静图仍在 */ });
+      });
+    });
+    el.addEventListener("mouseleave", teardown);
+  }
+  el.addEventListener("click", (e) => { e.stopPropagation(); previewGroup(g); });
+  return el;
+}
 
 // v3.43：命名槽/属性标签解析（原在主面板闭包内，抽卡节点变量行也要用，提升到模块级）
 const SLOT_RE = /\{([^{}]*)\}/g;
@@ -1720,6 +1784,8 @@ function startController(node) {
     });
 
     const bulkCls = isBulk ? " vpl-item-bulk" : "";
+    // v3.64：封面（无预览的组返回 null，h() 自动跳过 → 行内/卡片零占位维持旧观感）
+    const cover = buildCoverThumb(g, state.view === "card" ? "vpl-thumb-banner" : "vpl-thumb-row");
     let item;
     if (state.view === "card") {
       // v3.20 卡片视图：竖向卡片（左侧色条 + 名称行 + 内容摘要 + 分类/标签 chips）
@@ -1742,14 +1808,14 @@ function startController(node) {
         draggable: "true",
         "data-id": g.id,
         title: isSelected ? "双击编辑" : "双击预览",
-      }, [bar, top, actions, snippet, meta].filter(Boolean));
+      }, [bar, cover, top, actions, snippet, meta].filter(Boolean));
       item.addEventListener("dblclick", () => { if (isSelected) editGroup(g.id); else previewGroup(g); });
     } else {
       item = h("div", {
         class: "vpl-item" + (isSelected ? " vpl-item-selected" : "") + bulkCls,
         draggable: "true",
         "data-id": g.id,
-      }, [dragHandle, dot, body, actions]);
+      }, [dragHandle, cover, dot, body, actions].filter(Boolean));
     }
 
     item.addEventListener("dragstart", (e) => {

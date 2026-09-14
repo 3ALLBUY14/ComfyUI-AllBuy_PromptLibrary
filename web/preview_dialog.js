@@ -3,6 +3,35 @@
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
 
+const API = "/allbuy_promptlibrary";
+
+// v3.64：单卡预览顶部的封面媒体区（视频优先，可拖进度/开声）；两者皆无返回 null
+function buildPreviewMedia(group) {
+  const videoName = group.coverVideo || "";
+  const posterName = group.cover || "";
+  if (!videoName && !posterName) return null;
+  if (videoName) {
+    const v = document.createElement("video");
+    v.className = "vpl-pv-media";
+    v.src = `${API}/cover/video?name=${encodeURIComponent(videoName)}`;
+    v.controls = true;
+    v.autoplay = true;
+    v.muted = true; // 用 property 而非 attribute：自动播放静音口径以浏览器判定为准
+    v.loop = true;
+    v.playsInline = true;
+    v.preload = "metadata";
+    if (posterName) v.poster = `${API}/cover/file?name=${encodeURIComponent(posterName)}&w=960`;
+    return v;
+  }
+  const img = h("img", {
+    class: "vpl-pv-media",
+    src: `${API}/cover/file?name=${encodeURIComponent(posterName)}&w=1280`,
+    alt: "",
+  });
+  img.addEventListener("error", () => img.remove()); // 封面丢失时不挡下面的文本预览
+  return img;
+}
+
 function h(tag, props = {}, children = []) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -193,7 +222,9 @@ export function previewGroup(group) {
   // 分类显示优先 categories 数组（v3.12 起主字段），旧单字符串 category 兜底
   const cats = (Array.isArray(group.categories) && group.categories.length)
     ? group.categories.join(" / ") : (group.category || "");
+  const media = buildPreviewMedia(group);
   const body = h("div", {}, [
+    media,
     h("div", { class: "vpl-preview-meta" }, [
       h("span", { class: "vpl-dot", style: `background:${group.color || "#888"}` }),
       h("strong", {}, group.name || "未命名"),
@@ -203,7 +234,7 @@ export function previewGroup(group) {
     textBlock("正向提示词", group.positive, group.color),
     textBlock("负向提示词", group.negative, "#E74C3C"),
   ]);
-  openShell("预览：" + (group.name || "未命名"), body);
+  openShell("预览：" + (group.name || "未命名"), body, media ? 860 : 720);
 }
 
 /** 合并结果预览：按卡片分块着色 + 最终文本 */

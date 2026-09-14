@@ -2333,3 +2333,86 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   min-height: 16px; margin-top: 6px;
   font-size: 12px; color: var(--vpl-text-subtle, #6b7689); text-align: center;
 }
+
+/* ============================================================
+   v3.64 提示词组封面：预览图 & 预览视频
+   列表行首缩略图 / 卡片横幅 / 编辑弹窗媒体槽 / 预览弹窗媒体区
+   ============================================================ */
+
+/* ---- 列表行首缩略图（46×34）与卡片横幅（16:9）共用基类 ---- */
+.vpl-thumb {
+  position: relative; overflow: hidden; flex: 0 0 auto; cursor: pointer;
+  background: var(--vpl-bg-inset, rgba(0, 0, 0, 0.22));
+  border: 1px solid var(--vpl-border, rgba(255, 255, 255, 0.085));
+  border-radius: var(--vpl-r-sm, 6px);
+}
+.vpl-thumb:hover { border-color: var(--vpl-primary, #6366f1); }
+.vpl-thumb-row { width: 46px; height: 34px; }
+.vpl-thumb-banner {
+  width: 100%; aspect-ratio: 16 / 9; border-radius: 0; border-width: 0 0 1px 0;
+}
+.vpl-thumb-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; transition: transform 0.25s var(--vpl-ease, ease);
+}
+.vpl-thumb:hover .vpl-thumb-img { transform: scale(1.06); }
+.vpl-thumb-ph {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--vpl-text-subtle, #6b7689);
+}
+.vpl-thumb-ph svg { width: 14px; height: 14px; }
+.vpl-thumb-banner .vpl-thumb-ph svg { width: 22px; height: 22px; }
+/* hover 挂载的视频：canplay 后加 .on 淡入（避免首帧黑块），始终盖住静图 */
+.vpl-thumb-video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; display: block; opacity: 0; pointer-events: none;
+}
+.vpl-thumb-video.on { opacity: 1; }
+.vpl-thumb-badge {
+  position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 7px;
+  border-radius: 4px; pointer-events: none; transition: opacity 0.15s;
+}
+.vpl-thumb-banner .vpl-thumb-badge { width: 20px; height: 20px; font-size: 9px; border-radius: 6px; right: 6px; bottom: 6px; }
+.vpl-thumb.playing .vpl-thumb-badge { opacity: 0; }
+
+/* ---- 预览弹窗媒体区 ---- */
+.vpl-pv-media {
+  display: block; width: 100%; max-height: 420px; margin-bottom: 14px;
+  border-radius: var(--vpl-r-md, 8px); background: #000; object-fit: contain;
+}
+
+/* ---- 编辑弹窗：预览图 / 预览视频 双槽 ---- */
+.vpl-media-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.vpl-media-slot {
+  position: relative; min-height: 96px; border-radius: var(--vpl-r-md, 8px);
+  border: 1px dashed var(--vpl-border-strong, rgba(255, 255, 255, 0.14));
+  background: var(--vpl-bg-inset, rgba(0, 0, 0, 0.22));
+  cursor: pointer; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s var(--vpl-ease, ease), background 0.15s var(--vpl-ease, ease);
+}
+.vpl-media-slot:hover, .vpl-media-slot.dragover {
+  border-color: var(--vpl-primary, #6366f1);
+  background: rgba(99, 102, 241, 0.06);
+}
+.vpl-media-slot.filled { border-style: solid; border-color: var(--vpl-border, rgba(255, 255, 255, 0.085)); }
+.vpl-media-slot.busy { opacity: 0.55; pointer-events: none; }
+.vpl-media-slot.vpl-flash-fail { border-color: var(--vpl-danger, #fb7185); background: rgba(251, 113, 133, 0.14); }
+.vpl-media-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px; text-align: center; font-size: 11px; color: var(--vpl-text-subtle, #6b7689);
+  line-height: 1.5;
+}
+.vpl-media-empty-ico svg { width: 20px; height: 20px; opacity: 0.55; }
+.vpl-media-frame { position: absolute; inset: 0; }
+.vpl-media-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vpl-media-x {
+  position: absolute; right: 5px; top: 5px; z-index: 2; width: 20px; height: 20px;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px;
+  border-radius: 6px; backdrop-filter: blur(4px);
+}
+.vpl-media-slot.filled:hover .vpl-media-x { display: flex; }
+.vpl-media-x:hover { background: var(--vpl-danger, #fb7185); }
