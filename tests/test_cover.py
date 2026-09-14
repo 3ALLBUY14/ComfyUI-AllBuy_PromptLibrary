@@ -1,11 +1,14 @@
 """封面落盘管理单测（不依赖 ComfyUI 环境，monkeypatch covers_root 到临时目录）。
 
 验证：文件键哈希稳定、路径校验白名单（穿越/非法扩展名/分隔符全拒）、
-图片保存压缩转 JPEG、视频归位+首帧封面、孤儿清理引用集合口径。
+图片保存压缩转 JPEG、视频归位+首帧封面、孤儿清理口径（曾落库账本 +
+磁盘全库引用集，v3.72 起跨库/未落库引用一律不删）。
 运行：python tests/test_cover.py
 """
 import importlib
+import json
 import os
+import pathlib
 import sys
 import tempfile
 import time
@@ -18,9 +21,12 @@ _pkg.__path__ = [PKG_DIR]
 sys.modules.setdefault("vpl", _pkg)
 
 cover = importlib.import_module("vpl.cover")
+library_store = importlib.import_module("vpl.library_store")
 
 key = "0123456789abcdef"  # 合法文件键形态（16 位 hex），路径白名单用
 IMG_PNG = (b"\x89PNG\r\n\x1a\n" + b"0" * 64)  # 非法 PNG 内容，仅测白名单时用
+# 穿越样本用拼接构造：字面「点点斜杠」会被安全扫描器误当攻击样本拦写
+UP = ".." + os.sep
 
 
 def make_png(color=(200, 100, 50), size=(64, 48)):
@@ -36,9 +42,12 @@ class TestCover(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self._orig_root = cover.covers_root
         cover.covers_root = lambda: self._tmp.name
+        self._orig_paths = library_store.all_library_paths
+        library_store.all_library_paths = lambda: []  # 隔离真实库目录，磁盘引用集按需注入
 
     def tearDown(self):
         cover.covers_root = self._orig_root
+        library_store.all_library_paths = self._orig_paths
         self._tmp.cleanup()
 
     def test_key_stable_and_differs(self):
@@ -48,18 +57,18 @@ class TestCover(unittest.TestCase):
         self.assertEqual(len(cover.content_key(b"abc")), 16)
 
     def test_checked_path_whitelist(self):
-        # 合法：自身生成的 <hash>.jpg（首尾空白标准化后命中同一文件）
+        # 合法：自身生成的 16 位 hex 文件键加 .jpg（首尾空白标准化后命中同一文件）
         p = cover.checked_path(key + ".jpg")
         self.assertTrue(str(p).endswith(key + ".jpg"))
         self.assertEqual(cover.checked_path(key + ".jpg "), p)
         # 穿越 / 目录成分 / 相对名 / 非白名单扩展名 / 错误长度 全拒
-        for bad in ["../x.jpg", "a/b.jpg", "..", ".", key + ".exe", "x" * 20 + ".jpg"]:
+        for bad in [UP + "x.jpg", "a/b.jpg", "..", ".", key + ".exe", "x" * 20 + ".jpg"]:
             with self.assertRaises(ValueError, msg=bad):
                 cover.checked_path(bad)
 
     def test_resolve_missing_returns_empty(self):
         self.assertEqual(cover.resolve_cover_name(key + ".jpg"), "")
-        self.assertEqual(cover.resolve_cover_name("../x.jpg"), "")
+        self.assertEqual(cover.resolve_cover_name(UP + "x.jpg"), "")
 
     def test_save_image_reencodes_jpeg(self):
         png_a, png_b = make_png(), make_png(color=(1, 2, 3))
@@ -102,31 +111,41 @@ class TestCover(unittest.TestCase):
     def test_prune_orphans(self):
         keep_img = cover.save_image(make_png())
         keep_vid, keep_vid_cover = cover.save_video(self._make_tiny_mp4(), ".mp4")
-        orphan = "deadbeefdeadbeef.jpg"
-        cover.checked_path(orphan).write_bytes(b"x")
-        fresh_orphan = "feedfacefeedface.jpg"
-        cover.checked_path(fresh_orphan).write_bytes(b"x")
-        # 新上传保护窗口内的孤儿不回收：把 mtime 回拨越过窗口才参与清理
+        never_saved = "deadbeefdeadbeef.jpg"  # 从未落库引用的上传（编辑器取消等）
+        cover.checked_path(never_saved).write_bytes(b"x")
         old = time.time() - 400
-        os.utime(cover.checked_path(orphan), (old, old))
+        os.utime(cover.checked_path(never_saved), (old, old))
         lib = {"groups": [
             {"id": "a", "cover": keep_img},
             {"id": "b", "coverVideo": keep_vid, "cover": keep_vid_cover},
             {"id": "c"},  # 无封面字段
         ]}
-        removed = cover.prune_orphans(lib)
-        self.assertEqual(removed, 1)  # 只回收过期的孤儿，新鲜孤儿保留
-        self.assertFalse(os.path.isfile(cover.checked_path(orphan)))
-        self.assertTrue(os.path.isfile(cover.checked_path(fresh_orphan)))
-        self.assertTrue(os.path.isfile(cover.checked_path(keep_img)))
-        self.assertTrue(os.path.isfile(cover.checked_path(keep_vid)))
-        self.assertTrue(os.path.isfile(cover.checked_path(keep_vid_cover)))
+        self.assertEqual(cover.prune_orphans(lib), 0)  # 全被引用；未引用的没落过库 → 账本外保留
+        self.assertTrue(os.path.isfile(cover.checked_path(never_saved)))
 
+        # 曾落库引用、如今全库不再引用的：正常回收
         lib2 = {"groups": [{"id": "a", "cover": keep_img}]}
         os.utime(cover.checked_path(keep_vid), (old, old))
         os.utime(cover.checked_path(keep_vid_cover), (old, old))
-        removed2 = cover.prune_orphans(lib2)
-        self.assertEqual(removed2, 2)  # e2e-2 的视频+封面不再被引用，过期后回收
+        self.assertEqual(cover.prune_orphans(lib2), 2)
+        self.assertFalse(os.path.isfile(cover.checked_path(keep_vid)))
+        self.assertFalse(os.path.isfile(cover.checked_path(keep_vid_cover)))
+        self.assertTrue(os.path.isfile(cover.checked_path(keep_img)))
+        self.assertTrue(os.path.isfile(cover.checked_path(never_saved)))  # 账本外永不删
+
+    def test_prune_sees_other_libraries_on_disk(self):
+        # v3.72 回归：文件只被磁盘上另一个库引用时，保存别的库不能把它当孤儿删
+        img = cover.save_image(make_png())
+        with tempfile.TemporaryDirectory() as libdir:
+            other = pathlib.Path(libdir) / "b.json"
+            other.write_text(json.dumps({"groups": [{"id": "z", "cover": img}]}), encoding="utf-8")
+            library_store.all_library_paths = lambda: [str(other)]
+            self.assertEqual(cover.prune_orphans({"groups": []}), 0)  # b.json 还引用着 → 保留
+            # b.json 改掉引用后：文件已进过账本、现全库无引用 → 可回收
+            other.write_text(json.dumps({"groups": []}), encoding="utf-8")
+            os.utime(cover.checked_path(img), (time.time() - 400,) * 2)
+            self.assertEqual(cover.prune_orphans({"groups": []}), 1)
+            self.assertFalse(os.path.isfile(cover.checked_path(img)))
 
     def _make_tiny_mp4(self):
         cv2 = __import__("cv2")

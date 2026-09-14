@@ -307,10 +307,11 @@ _COVER_IMAGE_MAX = 32 * 1024 * 1024
 
 @_post("/cover/upload")
 async def cover_upload(request):
-    """封面上传（multipart: group_id + file）。图→重编码 JPEG；视频→流式落盘+抽首帧当封面。
+    """封面上传（multipart: group_id + file）。图→重编码 JPEG；视频→内存缓冲后落盘（上限 200MB）再抽首帧当封面。
 
-    图片返回 {cover: "<hash>.jpg"}；视频返回 {cover: "<hash>.jpg"|null, cover_video: "<hash>.ext"}。
-    cv2 缺失或首帧抽取失败时 cover 为 null，前端回退占位图标。
+    图片返回 cover（16 位 hex 的 jpg 文件名）；视频返回 cover（首帧名，可能为
+    null）与 cover_video（视频文件名）。cv2 缺失或首帧抽取失败时 cover 为 null，
+    前端回退占位图标。
     """
     try:
         reader = await request.multipart()
