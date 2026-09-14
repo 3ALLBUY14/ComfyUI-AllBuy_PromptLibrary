@@ -300,7 +300,7 @@ async def serve_image(request):
 
 # ---------------------------------------------------------------------------
 # 提示词组封面端点（v3.64）：预览图 / 预览视频
-# 文件名由后端按 group_id 哈希生成（cover.py），库 JSON 只存文件名
+# 文件名由后端按文件内容哈希生成（cover.py，v3.71），库 JSON 只存文件名
 # ---------------------------------------------------------------------------
 _COVER_IMAGE_MAX = 32 * 1024 * 1024
 
@@ -348,7 +348,7 @@ async def cover_upload(request):
         if not kind:
             return _json_error("缺少 file 字段")
         if kind == "image":
-            name = await asyncio.to_thread(cover.save_image, group_id, bytes(buf))
+            name = await asyncio.to_thread(cover.save_image, bytes(buf))
             return web.json_response({"ok": True, "cover": name, "cover_video": None})
         import tempfile
         # 临时文件必须与目标同目录（跨盘符 os.replace 会 WinError 17）
@@ -357,7 +357,7 @@ async def cover_upload(request):
             tmp.write(bytes(buf))
             tmp_path = tmp.name
         video_name, cover_name = await asyncio.to_thread(
-            cover.save_video, group_id, tmp_path, upload_ext)
+            cover.save_video, tmp_path, upload_ext)
         return web.json_response({"ok": True, "cover": cover_name, "cover_video": video_name})
     except ValueError as e:
         return _json_error(e)

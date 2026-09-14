@@ -1,6 +1,9 @@
-"""提示词组预览图 / 预览视频的落盘管理（v3.64）。
+"""提示词组预览图 / 预览视频的落盘管理（v3.64；v3.71 起文件名按内容哈希）。
 
-设计说明见函数 docstring；文件名由后端按 group_id 哈希生成，
+设计说明见函数 docstring；文件名由后端按**文件内容**哈希生成——同内容同名、
+换内容换名，/cover/file、/cover/video 的 max-age 缓存因此恒正确（URL 即内容），
+覆盖首帧图/替换视频后浏览器不会再到一天前的旧缓存里拿旧画面。
+被替换下来的旧文件成为孤儿，由 prune_orphans 在下次整库保存时回收。
 前端不指定路径，所有路径经 checked_path 校验。
 """
 import hashlib
@@ -30,9 +33,9 @@ def covers_root():
     return base
 
 
-def cover_key(group_id):
-    """组 id → 16 位 hex 文件键（组 id 字符集不可控，哈希后文件名恒安全、同组覆盖上传同名）。"""
-    return hashlib.sha256(str(group_id or "").encode("utf-8")).hexdigest()[:16]
+def content_key(data):
+    """文件内容 → 16 位 hex 文件键（组 id 字符集不可控，哈希后文件名恒安全）。"""
+    return hashlib.sha256(data).hexdigest()[:16]
 
 
 def checked_path(name):
@@ -58,8 +61,8 @@ def resolve_cover_name(name):
     return str(target) if target.is_file() else ""
 
 
-def save_image(group_id, raw):
-    """图片字节 → 重编码 JPEG 落盘（顺带抹掉原始 payload），返回文件名。抛 ValueError 为不可解码。"""
+def save_image(raw):
+    """图片字节 → 重编码 JPEG 落盘（顺带抹掉原始 payload），按内容哈希返回文件名。抛 ValueError 为不可解码。"""
     import io
     from PIL import Image
     with Image.open(io.BytesIO(raw)) as im:
@@ -72,22 +75,25 @@ def save_image(group_id, raw):
         buf = io.BytesIO()
         im.convert("RGB").save(buf, format="JPEG", quality=85, optimize=True)
         data = buf.getvalue()
-    name = cover_key(group_id) + ".jpg"
+    name = content_key(data) + ".jpg"
     checked_path(name).write_bytes(data)
     return name
 
 
-def save_video(group_id, src_path, orig_ext):
-    """已流式落盘的临时视频文件 → 以 <hash><ext> 归位；尽力抽首帧存 <hash>.jpg 当封面。
+def save_video(src_path, orig_ext):
+    """已流式落盘的临时视频文件 → 以 <内容哈希><ext> 归位；尽力抽首帧存 <内容哈希>.jpg 当封面。
 
     返回 (video_name, cover_name_or_None)。cv2 缺失或取帧失败时封面为 None
     （前端回退占位图标）；cv2 能打开本身就是格式校验。
     """
-    key = cover_key(group_id)
+    h = hashlib.sha256()
+    with open(src_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
     ext = (orig_ext or "").lower()
     if ext not in media_asset.VIDEO_EXTS:
         ext = ".mp4"
-    video_name = key + ext
+    video_name = h.hexdigest()[:16] + ext
     target = checked_path(video_name)
     # shutil.move：跨盘符时 os.replace 会 WinError 17（调用方应已同盘，此处防御）
     import shutil
@@ -103,7 +109,7 @@ def save_video(group_id, src_path, orig_ext):
                 if ok and frame is not None:
                     ok2, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     if ok2:
-                        cover_name = key + ".jpg"
+                        cover_name = content_key(buf.tobytes()) + ".jpg"
                         checked_path(cover_name).write_bytes(buf.tobytes())
         finally:
             cap.release()

@@ -444,7 +444,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     renderTagPalette();
 
     // v3.64：预览图 / 预览视频字段——文件名存 data.cover / data.coverVideo，实际文件经
-    // /cover/upload 落盘（后端按组 id 哈希命名）。移除只清字段：旧文件由整库保存时的
+    // /cover/upload 落盘（后端按内容哈希命名，v3.71：内容变名字变，覆盖首帧图/
+    // 换视频后 URL 变，浏览器不会拿旧缓存）。移除只清字段：旧文件由整库保存时的
     // 孤儿清理回收，所以取消编辑也不会留下错误引用。
     const onCoverApplied = [];
     function buildMediaSlot({ kind, icon, accept, hint, getFile, apply }) {

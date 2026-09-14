@@ -19,7 +19,7 @@ sys.modules.setdefault("vpl", _pkg)
 
 cover = importlib.import_module("vpl.cover")
 
-key = cover.cover_key("demo-001")
+key = "0123456789abcdef"  # 合法文件键形态（16 位 hex），路径白名单用
 IMG_PNG = (b"\x89PNG\r\n\x1a\n" + b"0" * 64)  # 非法 PNG 内容，仅测白名单时用
 
 
@@ -42,9 +42,10 @@ class TestCover(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_key_stable_and_differs(self):
-        self.assertEqual(cover.cover_key("demo-001"), key)
-        self.assertNotEqual(cover.cover_key("demo-001"), cover.cover_key("demo-002"))
-        self.assertEqual(len(key), 16)
+        # 内容哈希键：同内容同名（URL 即内容，浏览器缓存恒正确），异内容异名
+        self.assertEqual(cover.content_key(b"abc"), cover.content_key(b"abc"))
+        self.assertNotEqual(cover.content_key(b"abc"), cover.content_key(b"abd"))
+        self.assertEqual(len(cover.content_key(b"abc")), 16)
 
     def test_checked_path_whitelist(self):
         # 合法：自身生成的 <hash>.jpg（首尾空白标准化后命中同一文件）
@@ -61,15 +62,18 @@ class TestCover(unittest.TestCase):
         self.assertEqual(cover.resolve_cover_name("../x.jpg"), "")
 
     def test_save_image_reencodes_jpeg(self):
-        name = cover.save_image("g1", make_png())
-        self.assertEqual(name, cover.cover_key("g1") + ".jpg")
+        png_a, png_b = make_png(), make_png(color=(1, 2, 3))
+        name = cover.save_image(png_a)
+        self.assertRegex(name, r"^[0-9a-f]{16}\.jpg$")
+        self.assertEqual(cover.save_image(png_a), name)  # 同内容同名 → URL 即内容
+        self.assertNotEqual(cover.save_image(png_b), name)  # 覆盖上传=换名，旧缓存自然失效
         from PIL import Image
         with Image.open(cover.checked_path(name)) as im:
             self.assertEqual(im.format, "JPEG")
             self.assertEqual(im.size, (64, 48))
 
     def test_save_image_downscales(self):
-        name = cover.save_image("g1", make_png(size=(4000, 2000)))
+        name = cover.save_image(make_png(size=(4000, 2000)))
         from PIL import Image
         with Image.open(cover.checked_path(name)) as im:
             self.assertLessEqual(max(im.size), cover.IMAGE_MAX_SIDE)
@@ -86,19 +90,21 @@ class TestCover(unittest.TestCase):
             frame = np.full((24, 32, 3), i * 40, dtype="uint8")
             vw.write(frame)
         vw.release()
-        video_name, cover_name = cover.save_video("g2", src.name, ".MP4")
-        self.assertEqual(video_name, cover.cover_key("g2") + ".mp4")  # 大写扩展名归一
+        import hashlib
+        raw = open(src.name, "rb").read()
+        video_name, cover_name = cover.save_video(src.name, ".MP4")
+        self.assertEqual(video_name, hashlib.sha256(raw).hexdigest()[:16] + ".mp4")  # 大写扩展名归一
         self.assertTrue(os.path.isfile(cover.checked_path(video_name)))
-        self.assertEqual(cover_name, cover.cover_key("g2") + ".jpg")  # 首帧封面已落盘
+        self.assertRegex(cover_name, r"^[0-9a-f]{16}\.jpg$")  # 首帧封面已落盘
         self.assertTrue(os.path.isfile(cover.checked_path(cover_name)))
         self.assertFalse(os.path.isfile(src.name))  # 临时文件已移走
 
     def test_prune_orphans(self):
-        keep_img = cover.save_image("a", make_png())
-        keep_vid, keep_vid_cover = cover.save_video("b", self._make_tiny_mp4(), ".mp4")
-        orphan = cover.cover_key("dead") + ".jpg"
+        keep_img = cover.save_image(make_png())
+        keep_vid, keep_vid_cover = cover.save_video(self._make_tiny_mp4(), ".mp4")
+        orphan = "deadbeefdeadbeef.jpg"
         cover.checked_path(orphan).write_bytes(b"x")
-        fresh_orphan = cover.cover_key("fresh") + ".jpg"
+        fresh_orphan = "feedfacefeedface.jpg"
         cover.checked_path(fresh_orphan).write_bytes(b"x")
         # 新上传保护窗口内的孤儿不回收：把 mtime 回拨越过窗口才参与清理
         old = time.time() - 400
