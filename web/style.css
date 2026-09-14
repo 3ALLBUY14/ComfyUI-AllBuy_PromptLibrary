@@ -2400,6 +2400,11 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .vpl-media-slot.filled { border-style: solid; border-color: var(--vpl-border, rgba(255, 255, 255, 0.085)); }
 .vpl-media-slot.busy { opacity: 0.55; pointer-events: none; }
 .vpl-media-slot.vpl-flash-fail { border-color: var(--vpl-danger, #fb7185); background: rgba(251, 113, 133, 0.14); }
+.vpl-media-err {
+  display: none; position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding: 5px 8px; font-size: 10.5px; line-height: 1.45; text-align: center;
+  background: rgba(60, 12, 22, 0.88); color: #ffc4cd;
+}
 .vpl-media-empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 10px; text-align: center; font-size: 11px; color: var(--vpl-text-subtle, #6b7689);

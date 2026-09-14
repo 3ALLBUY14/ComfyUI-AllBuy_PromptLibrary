@@ -456,7 +456,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       ]);
       const frame = h("div", { class: "vpl-media-frame" });
       const xBtn = h("span", { class: "vpl-media-x", title: "移除" }, "×");
-      slot.append(empty, frame, xBtn, fileInput);
+      const errTip = h("div", { class: "vpl-media-err" });
+      slot.append(empty, frame, errTip, xBtn, fileInput);
 
       function refresh() {
         const name = getFile();
@@ -482,12 +483,18 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           frame.appendChild(h("span", { class: "vpl-media-empty-ico", html: icon }));
         }
       }
-      function flashFail() {
-        slot.classList.add("vpl-flash-fail"); // 上传失败红闪（与复制失败同款提示），不静默
-        setTimeout(() => slot.classList.remove("vpl-flash-fail"), 900);
+      function flashFail(msg) {
+        errTip.textContent = msg || "上传失败";
+        errTip.style.display = "block";
+        slot.classList.add("vpl-flash-fail"); // 上传失败红闪+原因文案，不静默
+        clearTimeout(flashFail._t);
+        flashFail._t = setTimeout(() => {
+          slot.classList.remove("vpl-flash-fail");
+          errTip.style.display = "none";
+        }, 3200);
       }
       async function upload(file) {
-        if (!file) { flashFail(); return; } // 拖入的不是本地文件（网页图片/文本等）
+        if (!file) { flashFail("拖入的不是本地文件"); return; }
         const fd = new FormData();
         fd.append("group_id", data.id);
         fd.append("file", file, file.name || (accept.includes(".mp4") ? "clip.mp4" : "paste.jpg"));
@@ -501,7 +508,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
           onCoverApplied.forEach((fn) => fn()); // 视频首帧封面可能联动图槽
         } catch (e) {
           console.warn("[VPL] 封面上传失败：", e);
-          flashFail();
+          flashFail(String(e.message || e).slice(0, 120));
         } finally {
           slot.classList.remove("busy");
         }
