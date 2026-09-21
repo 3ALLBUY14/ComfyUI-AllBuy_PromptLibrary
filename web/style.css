@@ -2427,10 +2427,11 @@ body > .bips-lightbox-ghost { z-index: 10000; }
    容器复用 .vpl-node；玻璃卡行 + 胶囊开关 + 树状选择器 + 分组管理
    ===================================================================== */
 
-/* DOM widget 外壳：事件穿透画布，仅 .alora-control 恢复交互 */
+/* DOM widget 外壳：事件穿透画布，仅 .alora-control 恢复交互。
+   不设 overflow:hidden：三件套方案下外壳高度被前端归 0（widget.computeSize=[0,-4]），
+   面板内容靠自身高度从这里溢出呈现，hidden 会把整个面板裁没 */
 .dom-widget.alora-fit-widget {
   pointer-events: none !important;
-  overflow: hidden !important;
   box-sizing: border-box;
 }
 .alora-control { pointer-events: auto; }

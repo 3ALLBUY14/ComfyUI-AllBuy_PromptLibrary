@@ -894,8 +894,13 @@ function recalcStackHeight(node) {
   requestAnimationFrame(() => {
     node._aloraHeightPending = false;
     const panel = node?._stackContainer;
-    if (!panel?.isConnected || panel.getBoundingClientRect().height === 0) return;
+    if (!panel?.isConnected) return;
+    // 测量用 height:auto（wrapper 被 [0,-4] 归零后 h-full 会把容器连带压成 0，
+    // rect/scrollHeight 全读不到——media_asset_loader L1495 同款"先 auto 测再写回 px"）
+    const prevH = panel.style.height;
+    panel.style.height = "auto";
     const contentH = stackPanelHeight(node);
+    panel.style.height = contentH > 0 ? contentH + "px" : prevH;
     if (contentH <= 0) return;
     node._aloraCachedH = Math.max(STACK_MIN_TOTAL_H, contentH + stackChromeH(node) + STACK_BOTTOM_GAP);
     const width = node.size?.[0] > 0 ? node.size[0] : STACK_MIN_WIDTH;
@@ -1153,7 +1158,8 @@ async function attach(node) {
       if (wrapper.style.width === "100%") wrapper.style.width = "";
       if (wrapper.style.maxWidth === "100%") wrapper.style.maxWidth = "";
       wrapper.style.boxSizing = "border-box";
-      wrapper.style.overflow = "hidden";
+      // 不设 overflow:hidden：wrapper 高度被前端归 0（computeSize [0,-4]），面板内容
+      // 靠自身显式高度从这里自然溢出呈现，hidden 会把整个面板裁没（media 同款不加）
     };
     markWrapper();
     requestAnimationFrame(markWrapper);
