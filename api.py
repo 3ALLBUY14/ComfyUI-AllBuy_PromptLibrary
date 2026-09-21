@@ -13,7 +13,7 @@ from collections import OrderedDict
 from aiohttp import web
 from PIL import Image
 
-from . import library_store, constants, random_draw, batch_image_node, media_asset, cover
+from . import library_store, constants, random_draw, batch_image_node, media_asset, cover, lora_groups_store
 
 P = constants.API_PREFIX
 
@@ -186,6 +186,36 @@ async def draw(request):
 async def version(request):
     """后端版本号，供前端握手对比：不一致 = 后端未重启到新版（旧 Python 代码仍在跑）。"""
     return web.json_response({"ok": True, "version": constants.PLUGIN_VERSION})
+
+
+@_get("/lora_groups")
+async def lora_groups(request):
+    """LoRA 自定义分组（LoRA 堆栈节点选择器用）。缺失/损坏自动回退空结构。"""
+    try:
+        data = lora_groups_store.load_groups()
+        return web.json_response({"ok": True, **data})
+    except Exception as e:  # noqa: BLE001
+        return _json_error(e)
+
+
+@_post("/lora_groups/save")
+async def lora_groups_save(request):
+    """保存 LoRA 自定义分组。data 可为 {"groups":[...]} 或裸列表，校验后原子写盘。"""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _json_error("请求体不是合法 JSON")
+    # 裸列表/标量 body 也放行：save_groups 对非列表非 dict 抛 ValueError → 400
+    data = body.get("data", body) if isinstance(body, dict) else body
+    try:
+        saved = lora_groups_store.save_groups(data)
+        return web.json_response({"ok": True, **saved})
+    except ValueError as e:
+        return _json_error(e, 400)
+    except PermissionError as e:
+        return _json_error(e, 403)
+    except Exception as e:  # noqa: BLE001
+        return _json_error(e)
 
 
 # ---------------------------------------------------------------------------
