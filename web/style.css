@@ -2421,3 +2421,204 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   .vpl-editor-split { grid-template-columns: 1fr !important; overflow-y: auto !important; }
   .vpl-editor-media { border-right: none; border-bottom: 1px solid var(--vpl-border); overflow: visible; }
 }
+
+/* =====================================================================
+   AllBuy-LoRA 堆栈 (.alora-*)  v1.0
+   容器复用 .vpl-node；玻璃卡行 + 胶囊开关 + 树状选择器 + 分组管理
+   ===================================================================== */
+
+/* DOM widget 外壳：事件穿透画布，仅 .alora-control 恢复交互 */
+.dom-widget.alora-fit-widget {
+  pointer-events: none !important;
+  overflow: hidden !important;
+  box-sizing: border-box;
+}
+.alora-control { pointer-events: auto; }
+
+.alora-node { gap: 8px; }
+.alora-panel {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-lg);
+  background: var(--vpl-bg-panel); padding: 10px;
+}
+
+/* 顶栏：类型分段 + 模型下拉 + 分组按钮 */
+.alora-tbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.alora-seg {
+  display: inline-flex; gap: 2px; flex: none;
+  border: 1px solid var(--vpl-border); border-radius: 999px; padding: 2px;
+}
+.alora-seg button {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  font: 500 12px/1 var(--font-sans, inherit); color: var(--vpl-text-muted);
+  padding: 5px 12px; border-radius: 999px; transition: background .15s, color .15s;
+}
+.alora-seg button:hover { color: var(--vpl-text); background: var(--vpl-bg-card-hover); }
+.alora-seg button.on { background: var(--vpl-primary); color: #fff; }
+.alora-model-dd { flex: 1 1 150px; min-width: 120px; }
+.alora-groups-btn { flex: none; }
+
+/* GGUF 高级参数折叠区 */
+.alora-adv { margin: 0; padding: 8px 10px; gap: 6px; }
+.alora-adv-head {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--vpl-text-subtle);
+}
+.alora-adv-body { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.alora-adv-cell { display: flex; align-items: center; gap: 6px; }
+.alora-adv-cell .vpl-dd { min-width: 130px; }
+
+/* 列表头 + LoRA 行 */
+.alora-list-head {
+  display: flex; align-items: center; gap: 6px; padding: 2px 0 0;
+}
+.alora-list-title { font-size: 12px; font-weight: 600; color: var(--vpl-text-muted); margin-right: auto; }
+.alora-add { flex: none; }
+.alora-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 320px; overflow-y: auto; padding: 4px;
+  border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md);
+  background: var(--vpl-bg-panel);
+}
+.alora-row {
+  position: relative; display: grid;
+  grid-template-columns: 14px 26px 22px minmax(90px, 1fr) 118px 52px;
+  gap: 6px; align-items: center;
+  padding: 6px 8px; border-radius: var(--vpl-r-md);
+  background: var(--vpl-bg-card); border: 1px solid transparent;
+  transition: background .14s var(--vpl-ease), border-color .14s var(--vpl-ease),
+    box-shadow .14s var(--vpl-ease), opacity .14s var(--vpl-ease);
+}
+.alora-row:hover { background: var(--vpl-bg-card-hover); border-color: var(--vpl-border); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.alora-row.off { opacity: .5; }
+.alora-row.alora-dragging { opacity: .45; }
+.alora-row.alora-drop-before { box-shadow: 0 -2px 0 0 var(--vpl-primary); }
+.alora-row.alora-drop-after { box-shadow: 0 2px 0 0 var(--vpl-primary); }
+
+/* 胶囊滑钮开关 */
+.alora-toggle {
+  width: 32px; height: 18px; border-radius: 999px;
+  background: var(--vpl-primary); position: relative; cursor: pointer; flex: none;
+  transition: background .14s var(--vpl-ease);
+}
+.alora-toggle::after {
+  content: ""; position: absolute; top: 2px; left: 17px;
+  width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4); transition: left .14s var(--vpl-ease);
+}
+.alora-toggle.off { background: var(--vpl-border-strong); }
+.alora-toggle.off::after { left: 1px; }
+
+/* 收藏星 */
+.alora-star { flex: none; }
+.alora-star.on { color: #f5b301; }
+.alora-star.on svg { fill: currentColor; stroke: currentColor; }
+
+/* 名称按钮 */
+.alora-namewrap { min-width: 0; }
+.alora-name-btn {
+  appearance: none; width: 100%; min-width: 0; height: 28px; box-sizing: border-box;
+  background: var(--vpl-bg-inset); border: 1px solid var(--vpl-border);
+  border-radius: var(--vpl-r-sm); color: var(--vpl-text); font: 400 12.5px/1 var(--font-sans, inherit);
+  padding: 0 8px; cursor: pointer; text-align: left; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  transition: border-color .15s var(--vpl-ease), box-shadow .15s var(--vpl-ease);
+}
+.alora-name-btn:hover { border-color: var(--vpl-primary); }
+.alora-name-btn:focus { outline: none; border-color: var(--vpl-primary); box-shadow: var(--vpl-primary-glow); }
+
+/* 权重滑杆 + 数值徽标 */
+.alora-slider { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.alora-slider input[type="range"] { flex: 1; min-width: 0; accent-color: var(--vpl-primary); }
+.alora-val {
+  flex: none; min-width: 40px; text-align: right;
+  font: 500 12px/1 var(--vpl-mono, ui-monospace, Consolas, monospace);
+  font-variant-numeric: tabular-nums; color: var(--vpl-text);
+  background: var(--vpl-bg-inset); border: 1px solid var(--vpl-border);
+  border-radius: 5px; padding: 3px 6px;
+}
+
+/* 行尾操作 */
+.alora-rowacts { display: flex; gap: 2px; justify-content: flex-end; }
+.alora-gear.on { color: var(--vpl-primary); background: var(--vpl-primary-softer); }
+
+/* 展开行：min/max + 触发词 */
+.alora-range-row {
+  display: grid; grid-template-columns: auto 64px auto 64px minmax(0, 1fr);
+  gap: 6px; align-items: center; padding: 6px 8px;
+  border: 1px solid var(--vpl-primary); border-radius: var(--vpl-r-md);
+  background: var(--vpl-primary-softer);
+}
+.alora-range-label { font-size: 11px; color: var(--vpl-text-muted); white-space: nowrap; }
+.alora-num { height: 26px; padding: 0 6px; font-size: 12px; }
+.alora-trigger { height: 26px; font-size: 12px; min-width: 0; }
+
+/* 树状选择器浮层 */
+.alora-pop {
+  position: fixed; z-index: 100000; display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; box-sizing: border-box;
+  background: var(--vpl-pop-bg); border: 1px solid var(--vpl-border-strong);
+  border-radius: var(--vpl-r-lg); box-shadow: var(--vpl-sh-pop);
+  backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+.alora-pop-search {
+  flex: none; height: 30px; box-sizing: border-box; padding: 0 9px;
+  background: var(--vpl-bg-inset); border: 1px solid var(--vpl-border);
+  border-radius: var(--vpl-r-sm); color: var(--vpl-text); font-size: 12.5px; outline: none;
+}
+.alora-pop-search:focus { border-color: var(--vpl-primary); box-shadow: var(--vpl-primary-glow); }
+.alora-pop-list { max-height: 300px; overflow-y: auto; }
+.alora-pop-empty { padding: 14px 8px; text-align: center; color: var(--vpl-text-subtle); font-size: 12px; }
+
+/* 树节点 */
+.alora-grp-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--vpl-accent); padding: 8px 6px 3px; user-select: none;
+}
+.alora-grp-head::after { content: ""; flex: 1; height: 1px; background: var(--vpl-border); }
+/* 仅限定树/分组行：外层节点容器也复用 .alora-node 名（vpl-node alora-node），
+   若命中这行 align-items:center 会压掉纵向 flex 的默认 stretch，面板收缩为 fit-content 居中 */
+.alora-node.alora-dir,
+.alora-node.alora-file { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.alora-node.alora-dir { cursor: pointer; }
+.alora-node.alora-file { cursor: pointer; padding-top: 2px; padding-bottom: 2px; border-radius: 5px; }
+.alora-node.alora-file:hover { background: var(--vpl-primary-soft); }
+.alora-chevron { flex: none; font-size: 10px; color: var(--vpl-text-subtle); width: 12px; text-align: center; }
+.alora-dir-name { color: var(--vpl-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alora-file-name { color: var(--vpl-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alora-dot {
+  flex: none; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--vpl-primary); opacity: .7;
+}
+.alora-dot.fav { background: #f5b301; }
+.alora-path {
+  flex: none; font-size: 10px; color: var(--vpl-text-subtle);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px;
+  margin-left: auto;
+}
+.alora-tree-children { display: flex; flex-direction: column; }
+
+/* 底栏：启用计数 + 触发词汇总 */
+.alora-foot { align-items: center; }
+.alora-trig-summary {
+  flex: 1; min-width: 0; font: 400 11.5px/1.5 var(--vpl-mono, ui-monospace, Consolas, monospace);
+  color: var(--vpl-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer; user-select: none;
+}
+.alora-trig-summary:hover { color: var(--vpl-text); }
+
+/* 分组管理弹窗 */
+.alora-grp-list { max-height: 260px; }
+.alora-grp-members { border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md); padding: 10px; background: var(--vpl-bg-panel); min-height: 80px; }
+.alora-grp-member-head { font-size: 12px; font-weight: 600; color: var(--vpl-text); margin-bottom: 8px; }
+.alora-grp-members .vpl-chip-on {
+  background: var(--vpl-primary); border-color: var(--vpl-primary); color: #fff;
+  box-shadow: 0 2px 8px var(--vpl-primary-soft);
+}
+
+/* =====================================================================
+   AllBuy-A/B 图像对比 (.acmp-*)
+   画布 custom widget 全部在 canvas 绘制，无 DOM 样式需求；
+   预留作用域供后续（如辅助浮层）扩展。
+   ===================================================================== */
