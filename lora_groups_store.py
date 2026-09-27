@@ -105,6 +105,9 @@ def save_groups(data):
         groups_raw = data
     elif isinstance(data, dict):
         groups_raw = data.get("groups")
+        if groups_raw is None:
+            # dict 里没有 groups 键（字段名打错/畸形请求）：拒绝而非静默清空已存分组
+            raise ValueError("分组数据缺少 groups 字段")
     else:
         raise ValueError("分组数据格式错误")
     groups = _ensure_default_group(_normalize_groups(groups_raw))

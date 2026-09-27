@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.74");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.75");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -508,12 +508,15 @@ function createDropdown(options, current, onChange, cls = "") {
     e.stopPropagation();
     setOpen(!wrap.classList.contains("vpl-dd-open"));
   });
-  document.addEventListener("mousedown", (e) => {
+  const onDocDown = (e) => {
     if (!wrap.contains(e.target)) setOpen(false);
-  });
+  };
+  document.addEventListener("mousedown", onDocDown);
 
   refresh(options || [], current);
-  return { el: wrap, refresh };
+  // destroy：节点删除时由 onRemoved 调用。document 级监听不摘会随节点数累积，
+  // 且闭包经 wrap→onChange 强持有整棵面板 DOM 与 node 本体（showLoraPicker 同款配对移除）
+  return { el: wrap, refresh, destroy: () => document.removeEventListener("mousedown", onDocDown) };
 }
 
 function renderStack(node) {
@@ -1008,6 +1011,8 @@ async function attach(node) {
     });
     tbar.appendChild(seg);
 
+    // 本节点创建的全部下拉（模型 1 枚 + GGUF 参数 2 枚）：onRemoved 时逐个 destroy
+    const dropdowns = [];
     let modelDD = null;
     modelDD = createDropdown(await getModelOptions(node._modelType), currentModelName(),
       async (opt) => {
@@ -1015,6 +1020,7 @@ async function attach(node) {
           : node._modelType === "GGUF" ? "gguf_name" : "unet_name";
         setWidget(findWidget(node, key), opt);
       }, "alora-model-dd");
+    dropdowns.push(modelDD);
     tbar.appendChild(modelDD.el);
 
     const grpBtn = makeIconBtn(
@@ -1043,6 +1049,7 @@ async function attach(node) {
       const w = findWidget(node, key);
       const opts = w?.options?.values || ["default"];
       const dd = createDropdown(opts, w?.value || "default", (v) => setWidget(w, v));
+      dropdowns.push(dd);
       const cell = document.createElement("div");
       cell.className = "alora-adv-cell";
       const lbl = document.createElement("span");
@@ -1179,7 +1186,10 @@ async function attach(node) {
     };
     // 挂载初期布局未稳（字体/滚动条/前端补算），多时点收敛；内容变化再由 ResizeObserver 兜底
     [60, 250, 600].forEach((t) => setTimeout(() => recalcStackHeight(node), t));
-    new ResizeObserver(() => recalcStackHeight(node)).observe(container);
+    const ro = new ResizeObserver(() => recalcStackHeight(node));
+    ro.observe(container);
+    node._aloraRO = ro; // onRemoved 时 disconnect，observe 滞留会钉住容器 DOM
+    node._aloraDropdowns = dropdowns;
     // 离屏/后台页挂载时 widget.y 未就绪，chrome 只能固化兜底值 96；首次被画布绘制后
     // y 落定 → 在此触发重算修正（对齐 media_asset_loader 的绘制钩子写法）
     const _prevDrawBG = node.onDrawBackground;
@@ -1256,6 +1266,12 @@ app.registerExtension({
     nodeType.prototype.onRemoved = function () {
       clearPendingStackWrite(this);
       try { this._aloraPickerClose?.(); } catch (_) {}
+      // 摘掉各下拉的 document mousedown 监听与高度 ResizeObserver：
+      // 否则节点删除后监听/观察器仍强持有整棵面板 DOM，长驻页面反复增删节点逐次泄漏
+      for (const dd of this._aloraDropdowns || []) { try { dd.destroy?.(); } catch (_) {} }
+      this._aloraDropdowns = null;
+      try { this._aloraRO?.disconnect(); } catch (_) {}
+      this._aloraRO = null;
       if (onRemoved) onRemoved.apply(this, arguments);
     };
   },

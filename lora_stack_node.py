@@ -254,7 +254,9 @@ class AllBuyLoRAStack:
         if not gguf_name or gguf_name == _NO_LORA:
             raise ValueError("AllBuy-LoRA 堆栈：请选择 GGUF 模型")
         nodes = _comfy_nodes()
-        loader = getattr(nodes, "UnetLoaderGGUF", None)
+        # 自定义节点类只注册进 NODE_CLASS_MAPPINGS 字典（宿主从不 setattr 到模块），
+        # getattr(nodes, ...) 恒为 None——必须查字典
+        loader = nodes.NODE_CLASS_MAPPINGS.get("UnetLoaderGGUF")
         if loader is None:
             raise RuntimeError(
                 "AllBuy-LoRA 堆栈：未检测到 GGUF 支持，请安装 ComfyUI-GGUF 插件"

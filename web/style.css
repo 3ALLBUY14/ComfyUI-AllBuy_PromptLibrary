@@ -2435,6 +2435,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   box-sizing: border-box;
 }
 .alora-control { pointer-events: auto; }
+/* 执行期锁定：上面的 pe:auto 直接声明会压过 .vpl-locked 靠继承传导的 pe:none，
+   导致锁定对整个面板失效——锁定期强制收回；排除执行条自身，解锁按钮须保持可点 */
+.vpl-node.vpl-locked .alora-control:not(.vpl-exec-bar) { pointer-events: none; }
 
 .alora-node { gap: 8px; }
 .alora-panel {
@@ -2459,8 +2462,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .alora-model-dd { flex: 1 1 150px; min-width: 120px; }
 .alora-groups-btn { flex: none; }
 
-/* GGUF 高级参数折叠区 */
-.alora-adv { margin: 0; padding: 8px 10px; gap: 6px; }
+/* GGUF 高级参数折叠区：必须补 display，盖掉 .vpl-advanced 基态的 display:none——
+   JS 显示只置 style.display=""（移除行内样式回落 CSS），无此行整个折叠区永不可见 */
+.alora-adv { display: flex; margin: 0; padding: 8px 10px; gap: 6px; }
 .alora-adv-head {
   font-size: 11px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; color: var(--vpl-text-subtle);

@@ -76,6 +76,20 @@ class StoreTests(unittest.TestCase):
         by_name = {g["name"]: g for g in saved["groups"]}
         self.assertEqual(by_name["A"]["loras"], ["a"])
 
+    def test_save_rejects_dict_without_groups(self):
+        # dict 但缺 groups 键（字段名打错/畸形请求）必须报错，不得静默清空已存分组
+        groups_store.save_groups([{"name": "A", "loras": ["a"]}])
+        for bad in [{"foo": 1}, {}, {"data": {"groups": None}}]:
+            with self.assertRaises(ValueError):
+                groups_store.save_groups(bad)
+        names = [g["name"] for g in groups_store.load_groups()["groups"]]
+        self.assertIn("A", names)  # 被拒绝的保存不动盘上旧数据
+
+    def test_save_accepts_explicit_empty_groups(self):
+        # 显式空列表是合法保存（只剩默认收藏组），不得被缺键拦截误伤
+        saved = groups_store.save_groups({"groups": []})
+        self.assertEqual([g["name"] for g in saved["groups"]], ["我的收藏"])
+
     def test_bad_json_falls_back(self):
         path = groups_store._groups_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)

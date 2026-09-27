@@ -207,9 +207,9 @@ class ISChangedTests(unittest.TestCase):
 
 class LoadBaseModelTests(unittest.TestCase):
     def test_gguf_loader_missing_raises(self):
+        # 查找走 nodes.NODE_CLASS_MAPPINGS 字典：模拟"宿主在、GGUF 插件未装"= 注册表无该键
         class FakeNodes:
-            def __getattr__(self, name):
-                raise AttributeError(name)
+            NODE_CLASS_MAPPINGS = {}
 
         orig = lora._comfy_nodes
         lora._comfy_nodes = lambda: FakeNodes()
@@ -219,6 +219,33 @@ class LoadBaseModelTests(unittest.TestCase):
                     "GGUF", "None", "None", "m.gguf",
                     gguf_dequant_dtype="default", gguf_patch_dtype="default", gguf_patch_on_device=False)
             self.assertIn("ComfyUI-GGUF", str(ctx.exception))
+        finally:
+            lora._comfy_nodes = orig
+
+    def test_gguf_loader_found_via_mappings(self):
+        # 插件以字典键注册（ComfyUI-GGUF 同款）时应被找到，且实参与 load_unet 签名匹配
+        calls = {}
+
+        class FakeLoader:
+            def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None):
+                calls.update(unet_name=unet_name, dequant_dtype=dequant_dtype,
+                             patch_dtype=patch_dtype, patch_on_device=patch_on_device)
+                return ("MODEL",)
+
+        class FakeNodes:
+            NODE_CLASS_MAPPINGS = {"UnetLoaderGGUF": FakeLoader}
+
+        orig = lora._comfy_nodes
+        lora._comfy_nodes = lambda: FakeNodes()
+        try:
+            model, clip, vae = lora.AllBuyLoRAStack._load_base_model(
+                "GGUF", "None", "None", "m.gguf",
+                gguf_dequant_dtype="float16", gguf_patch_dtype="default", gguf_patch_on_device=True)
+            self.assertEqual(model, "MODEL")
+            self.assertIsNone(clip)
+            self.assertIsNone(vae)
+            self.assertEqual(calls, {"unet_name": "m.gguf", "dequant_dtype": "float16",
+                                     "patch_dtype": "default", "patch_on_device": True})
         finally:
             lora._comfy_nodes = orig
 
