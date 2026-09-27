@@ -17,6 +17,8 @@ import { api } from "../../scripts/api.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
+// 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.73");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -465,24 +467,37 @@ function createDropdown(options, current, onChange, cls = "") {
       item.addEventListener("mousedown", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        wrap.classList.remove("vpl-dd-open");
+        setOpen(false);
+        // 选中后刷新按钮文字与高亮项，否则看起来"选了没生效"
+        label.textContent = opt;
+        label.title = opt;
+        panel.querySelectorAll(".vpl-dd-item-active").forEach((n) => n.classList.remove("vpl-dd-item-active"));
+        item.classList.add("vpl-dd-item-active");
         onChange(opt);
       });
       panel.appendChild(item);
     }
   };
 
+  // 开合必须显式改 display：.vpl-dd-panel 基态 display:none，只切 class 列表永远出不来
+  //（videoprompt_library.js 同款组件的 open() 就是这么做的）
+  const setOpen = (open) => {
+    wrap.classList.toggle("vpl-dd-open", open);
+    if (open) {
+      panel.style.display = "block";
+      requestAnimationFrame(() => panel.classList.add("vpl-dd-panel-visible"));
+    } else {
+      panel.classList.remove("vpl-dd-panel-visible");
+      setTimeout(() => { if (!wrap.classList.contains("vpl-dd-open")) panel.style.display = "none"; }, 160);
+    }
+  };
+
   trigger.addEventListener("click", (e) => {
     e.stopPropagation();
-    const open = wrap.classList.toggle("vpl-dd-open");
-    if (open) panel.classList.add("vpl-dd-panel-visible");
-    else panel.classList.remove("vpl-dd-panel-visible");
+    setOpen(!wrap.classList.contains("vpl-dd-open"));
   });
   document.addEventListener("mousedown", (e) => {
-    if (!wrap.contains(e.target)) {
-      wrap.classList.remove("vpl-dd-open");
-      panel.classList.remove("vpl-dd-panel-visible");
-    }
+    if (!wrap.contains(e.target)) setOpen(false);
   });
 
   refresh(options || [], current);
@@ -897,10 +912,18 @@ function recalcStackHeight(node) {
     if (!panel?.isConnected) return;
     // 测量用 height:auto（wrapper 被 [0,-4] 归零后 h-full 会把容器连带压成 0，
     // rect/scrollHeight 全读不到——media_asset_loader L1495 同款"先 auto 测再写回 px"）
+    // 面板显式高度必须写【面板自身】的自然高：写容器实测值会把容器 22px 上下
+    // padding 也灌进面板，面板比内容高 22px，恰好顶穿 18px 底缝（用户报的"底部撑出边界"）
     const prevH = panel.style.height;
     panel.style.height = "auto";
-    const contentH = stackPanelHeight(node);
-    panel.style.height = contentH > 0 ? contentH + "px" : prevH;
+    // 开着的下拉浮层是绝对定位、会计入 scrollHeight，测量前先临时藏掉（同步完成，不产生可见闪烁）
+    const pops = panel.querySelectorAll(".vpl-dd-panel");
+    const savedDisplay = [];
+    for (const p of pops) { savedDisplay.push(p.style.display); if (p.style.display === "block") p.style.display = "none"; }
+    const panelH = Math.ceil(panel.scrollHeight);
+    const contentH = stackPanelHeight(node); // 容器实测（含 12+10 padding），节点总高按它算
+    panel.style.height = panelH > 0 ? panelH + "px" : prevH;
+    for (let i = 0; i < pops.length; i++) pops[i].style.display = savedDisplay[i];
     if (contentH <= 0) return;
     node._aloraCachedH = Math.max(STACK_MIN_TOTAL_H, contentH + stackChromeH(node) + STACK_BOTTOM_GAP);
     const width = node.size?.[0] > 0 ? node.size[0] : STACK_MIN_WIDTH;
