@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.73");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.74");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -338,13 +338,19 @@ function showLoraPicker(node, anchor, entry) {
           list.appendChild(row);
         }
       }
-      const headAll = document.createElement("div");
-      headAll.className = "alora-grp-head";
-      headAll.textContent = "🗂 全部文件";
-      list.appendChild(headAll);
-      const treeBox = document.createElement("div");
-      list.appendChild(treeBox);
-      renderTreeNode(treeBox, buildTree(allLoras), 0, new Set(), pick);
+      // 已被任意分组（含收藏）收录的文件不再重复进下方树：分组区已列出，重复只添噪
+      const grouped = new Set();
+      for (const g of groups) for (const n of (g.loras || [])) grouped.add(n);
+      const free = allLoras.filter((n) => !grouped.has(n));
+      if (free.length) {
+        const headAll = document.createElement("div");
+        headAll.className = "alora-grp-head";
+        headAll.textContent = groups.some((g) => (g.loras || []).length) ? "🗂 未分组文件" : "🗂 全部文件";
+        list.appendChild(headAll);
+        const treeBox = document.createElement("div");
+        list.appendChild(treeBox);
+        renderTreeNode(treeBox, buildTree(free), 0, new Set(), pick);
+      }
     } else {
       const hits = allLoras.filter((n) => n.toLowerCase().includes(query));
       if (!hits.length) {
@@ -383,9 +389,11 @@ function showLoraPicker(node, anchor, entry) {
   };
 
   const close = () => {
-    document.removeEventListener("mousedown", onDocDown, true);
+    document.removeEventListener("mousedown", onDocDown);
     document.removeEventListener("keydown", onKey, true);
     pop.remove();
+    node._aloraPickerClose = null;
+    node._aloraPickerAnchor = null;
   };
   const onDocDown = (e) => {
     if (!pop.contains(e.target)) close();
@@ -397,8 +405,12 @@ function showLoraPicker(node, anchor, entry) {
   render();
   position();
   requestAnimationFrame(position);
-  document.addEventListener("mousedown", onDocDown, true);
+  // 关闭监听必须挂冒泡阶段：挂捕获会在"再点一次名称按钮"时先于按钮触发（先关旧弹层、
+  // click 又立刻开新的），表现为菜单永远收不起来；行内元素的 stopGraph 拦冒泡正好保护弹层内点击
+  document.addEventListener("mousedown", onDocDown);
   document.addEventListener("keydown", onKey, true);
+  node._aloraPickerClose = close;
+  node._aloraPickerAnchor = anchor;
   search.focus();
 }
 
@@ -579,6 +591,12 @@ function renderStack(node) {
     nameBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!node._loraOptions?.length) return;
+      // 开着时再点=开合切换：同一行收起，另一行换锚点重开（点按钮收不起来的根治）
+      if (node._aloraPickerClose) {
+        const sameRow = node._aloraPickerAnchor === nameBtn;
+        node._aloraPickerClose();
+        if (sameRow) return;
+      }
       showLoraPicker(node, nameBtn, entry);
     });
     nameWrap.appendChild(nameBtn);
@@ -1237,10 +1255,7 @@ app.registerExtension({
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
       clearPendingStackWrite(this);
-      for (const menu of this._stackMenus || []) {
-        try { menu.remove(); } catch (_) {}
-      }
-      this._stackMenus = [];
+      try { this._aloraPickerClose?.(); } catch (_) {}
       if (onRemoved) onRemoved.apply(this, arguments);
     };
   },
