@@ -2640,6 +2640,27 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   background: var(--vpl-primary); border-color: var(--vpl-primary); color: #fff;
   box-shadow: 0 2px 8px var(--vpl-primary-soft);
 }
+/* v3.78：分组弹窗滚动条统一紫色（组列表/成员区/弹窗体全覆盖，Firefox 走 scrollbar-color） */
+.alora-grp-overlay .vpl-dialog-body,
+.alora-grp-overlay .alora-grp-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--vpl-primary) 60%, transparent) transparent;
+}
+.alora-grp-overlay ::-webkit-scrollbar { width: 8px; height: 8px; }
+.alora-grp-overlay ::-webkit-scrollbar-track { background: transparent; }
+.alora-grp-overlay ::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--vpl-primary) 60%, transparent);
+  border-radius: 4px;
+}
+.alora-grp-overlay ::-webkit-scrollbar-thumb:hover { background: var(--vpl-primary); }
+/* v3.78：分组行重命名/删除改常驻行内——原 hover 浮层绝对定位在窄网格格里盖住计数标签 */
+.alora-grp-list .vpl-item-actions {
+  position: static;
+  transform: none;
+  display: inline-flex;
+  padding: 0;
+  background: none;
+}
 
 /* =====================================================================
    AllBuy-A/B 图像对比 (.acmp-*)

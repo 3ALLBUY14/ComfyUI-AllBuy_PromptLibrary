@@ -744,7 +744,7 @@ function updateFooter(node) {
 // ---------------------------------------------------------------------------
 function showGroupManager(node) {
   const overlay = document.createElement("div");
-  overlay.className = "vpl-overlay";
+  overlay.className = "vpl-overlay alora-grp-overlay";
   document.body.appendChild(overlay);
 
   const dialog = document.createElement("div");
