@@ -2612,6 +2612,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   cursor: pointer; user-select: none;
 }
 .alora-trig-summary:hover { color: var(--vpl-text); }
+/* v3.80：触发词旁的常驻复制按钮（与文字点击共用复制链路） */
+.alora-trig-copy { flex: none; width: 22px; height: 22px; color: var(--vpl-text-muted); }
+.alora-trig-copy svg { width: 13px; height: 13px; }
 
 /* 分组管理弹窗（v3.77：弹窗 680px + 分组两列网格 + 字号加大 + 长名截断） */
 .alora-grp-list {

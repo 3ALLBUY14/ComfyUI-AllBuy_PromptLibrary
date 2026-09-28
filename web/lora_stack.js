@@ -1160,8 +1160,8 @@ async function attach(node) {
     trig.title = "点击复制触发词";
     node._stackFooterTrig = trig;
     stopGraph(trig);
-    trig.addEventListener("click", async (e) => {
-      e.stopPropagation();
+    // 文字点击与右侧复制按钮共用一条复制链路（空态占位开头是"（"则忽略）
+    const copyTrig = async () => {
       const text = trig.textContent;
       if (!text || text.startsWith("（")) return;
       try {
@@ -1170,8 +1170,18 @@ async function attach(node) {
         trig.textContent = "✓ 已复制";
         setTimeout(() => { trig.textContent = old; }, 1200);
       } catch (_) {}
+    };
+    trig.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyTrig();
     });
-    foot.append(count, trig);
+    const trigCopyBtn = makeIconBtn(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+      "复制触发词",
+      () => copyTrig(),
+      "alora-trig-copy",
+    );
+    foot.append(count, trig, trigCopyBtn);
     panel.appendChild(foot);
 
     container.appendChild(panel);
