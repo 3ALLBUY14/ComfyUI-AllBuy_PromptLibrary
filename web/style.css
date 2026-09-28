@@ -2613,10 +2613,29 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 }
 .alora-trig-summary:hover { color: var(--vpl-text); }
 
-/* 分组管理弹窗 */
-.alora-grp-list { max-height: 260px; }
-.alora-grp-members { border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md); padding: 10px; background: var(--vpl-bg-panel); min-height: 80px; }
-.alora-grp-member-head { font-size: 12px; font-weight: 600; color: var(--vpl-text); margin-bottom: 8px; }
+/* 分组管理弹窗（v3.77：弹窗 680px + 分组两列网格 + 字号加大 + 长名截断） */
+.alora-grp-list {
+  max-height: 380px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 6px;
+}
+.alora-grp-list .vpl-item { padding: 10px 12px; }
+.alora-grp-list .vpl-item-name { font-size: 14.5px; }
+.alora-grp-list .vpl-new-group { grid-column: 1 / -1; }
+.alora-grp-members { border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md); padding: 12px; background: var(--vpl-bg-panel); min-height: 80px; }
+.alora-grp-member-head { font-size: 14px; font-weight: 600; color: var(--vpl-text); margin-bottom: 10px; }
+.alora-grp-members .vpl-input { font-size: 14px; padding: 8px 12px; }
+/* 芯片加大；超长文件名省略号截断，悬停 title 看全名（flex 子项截断需 min-width:0） */
+.alora-grp-members .vpl-chip {
+  font-size: 14px;
+  padding: 6px 12px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .alora-grp-members .vpl-chip-on {
   background: var(--vpl-primary); border-color: var(--vpl-primary); color: #fff;
   box-shadow: 0 2px 8px var(--vpl-primary-soft);

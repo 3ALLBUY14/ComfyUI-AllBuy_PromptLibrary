@@ -749,7 +749,7 @@ function showGroupManager(node) {
 
   const dialog = document.createElement("div");
   dialog.className = "vpl-dialog";
-  dialog.style.maxWidth = "480px";
+  dialog.style.maxWidth = "680px";
   overlay.appendChild(dialog);
 
   const title = document.createElement("div");
