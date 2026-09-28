@@ -706,13 +706,29 @@ function renderStack(node) {
         writeStack(node);
         updateFooter(node);
       });
+      // 粘贴按钮：读剪贴板直接填入；读不到（权限/空剪贴板）时聚焦输入框退化成手动 Ctrl+V
+      const pasteSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 10v7"/><path d="m8.5 13.5 3.5 3.5 3.5-3.5"/></svg>';
+      const trigPaste = makeIconBtn(pasteSvg, "粘贴触发词", async () => {
+        let text = null;
+        try { text = await navigator.clipboard.readText(); } catch (_) {}
+        if (text && text.trim()) {
+          entry.trigger = text.trim();
+          trig.value = entry.trigger;
+          writeStack(node);
+          updateFooter(node);
+          trigPaste.innerHTML = "✓";
+          setTimeout(() => { trigPaste.innerHTML = pasteSvg; }, 1200);
+        } else {
+          trig.focus();
+        }
+      }, "alora-trig-paste");
       const minL = document.createElement("span");
       minL.className = "alora-range-label";
       minL.textContent = "最小";
       const maxL = document.createElement("span");
       maxL.className = "alora-range-label";
       maxL.textContent = "最大";
-      rangeRow.append(minL, minInput, maxL, maxInput, trig);
+      rangeRow.append(minL, minInput, maxL, maxInput, trig, trigPaste);
       list.appendChild(rangeRow);
     }
   }

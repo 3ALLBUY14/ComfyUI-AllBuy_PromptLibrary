@@ -2549,7 +2549,7 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 
 /* 展开行：min/max + 触发词 */
 .alora-range-row {
-  display: grid; grid-template-columns: auto 64px auto 64px minmax(0, 1fr);
+  display: grid; grid-template-columns: auto 64px auto 64px minmax(0, 1fr) auto;
   gap: 6px; align-items: center; padding: 6px 8px;
   border: 1px solid var(--vpl-primary); border-radius: var(--vpl-r-md);
   background: var(--vpl-primary-softer);
@@ -2557,6 +2557,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .alora-range-label { font-size: 11px; color: var(--vpl-text-muted); white-space: nowrap; }
 .alora-num { height: 26px; padding: 0 6px; font-size: 12px; }
 .alora-trigger { height: 26px; font-size: 12px; min-width: 0; }
+/* v3.81：触发词输入框旁的粘贴按钮 */
+.alora-trig-paste { flex: none; width: 22px; height: 22px; color: var(--vpl-text-muted); font-size: 12px; }
+.alora-trig-paste svg { width: 13px; height: 13px; }
 
 /* 树状选择器浮层 */
 .alora-pop {
