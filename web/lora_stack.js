@@ -818,14 +818,15 @@ function showGroupManager(node) {
       chips.replaceChildren();
       const q = (search.value || "").toLowerCase();
       // 与选择器文件树同约定：已被其他分组（含收藏）收录的文件不再列为候选，
-      // 防止同一文件进多个组（当前组成员照常显示、可点击移出）
+      // 防止同一文件进多个组；但本组成员即便与其他组重复（旧版/收藏星/API 产生的
+      // 跨组数据）也照常显示、可点击移出，否则它会在所有组视图里消失成死角
       const inOther = new Set();
       for (const g of groups) {
         if (g.id === group.id) continue;
         for (const n of (g.loras || [])) inOther.add(n);
       }
       const all = (node._loraOptions || []).filter(
-        (n) => n.toLowerCase().includes(q) && !inOther.has(n),
+        (n) => n.toLowerCase().includes(q) && (!inOther.has(n) || group.loras.includes(n)),
       );
       for (const name of all.slice(0, 120)) {
         const inGroup = group.loras.includes(name);
@@ -1176,15 +1177,16 @@ async function attach(node) {
     trig.title = "点击复制触发词";
     node._stackFooterTrig = trig;
     stopGraph(trig);
-    // 文字点击与右侧复制按钮共用一条复制链路（空态占位开头是"（"则忽略）
+    // 文字点击与右侧复制按钮共用一条复制链路（空态占位开头是"（"、
+    // 反馈窗口内自身文案"✓ 已复制"均忽略，防连点把反馈写进剪贴板/钉死底栏）
     const copyTrig = async () => {
       const text = trig.textContent;
-      if (!text || text.startsWith("（")) return;
+      if (!text || text.startsWith("（") || text === "✓ 已复制") return;
       try {
         await navigator.clipboard.writeText(text);
-        const old = trig.textContent;
+        // 还原用进入时捕获的 text：await 挂起期间重读可能拿到刚设的反馈文案
         trig.textContent = "✓ 已复制";
-        setTimeout(() => { trig.textContent = old; }, 1200);
+        setTimeout(() => { trig.textContent = text; }, 1200);
       } catch (_) {}
     };
     trig.addEventListener("click", (e) => {
