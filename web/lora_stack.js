@@ -1103,6 +1103,9 @@ async function attach(node) {
 
     const list = document.createElement("div");
     list.className = "alora-list";
+    // 容器须恢复交互：面板链路 pointer-events:none 做画布穿透，列表本体不标记
+    // 则其滚动条拖不动（滚轮靠行冒泡能滚、滑块点击穿透到画布）
+    stopGraph(list);
     node._stackList = list;
     panel.appendChild(list);
 
