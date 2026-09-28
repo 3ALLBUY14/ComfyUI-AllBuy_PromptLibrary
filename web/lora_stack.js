@@ -801,7 +801,16 @@ function showGroupManager(node) {
     const renderChips = () => {
       chips.replaceChildren();
       const q = (search.value || "").toLowerCase();
-      const all = (node._loraOptions || []).filter((n) => n.toLowerCase().includes(q));
+      // 与选择器文件树同约定：已被其他分组（含收藏）收录的文件不再列为候选，
+      // 防止同一文件进多个组（当前组成员照常显示、可点击移出）
+      const inOther = new Set();
+      for (const g of groups) {
+        if (g.id === group.id) continue;
+        for (const n of (g.loras || [])) inOther.add(n);
+      }
+      const all = (node._loraOptions || []).filter(
+        (n) => n.toLowerCase().includes(q) && !inOther.has(n),
+      );
       for (const name of all.slice(0, 120)) {
         const inGroup = group.loras.includes(name);
         const chip = document.createElement("span");
