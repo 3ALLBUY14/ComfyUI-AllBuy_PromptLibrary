@@ -246,8 +246,9 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "PromptLibrary": "提示词库",
-    "PromptRandomDraw": "随机抽卡",
-    "VideoPromptLibrary": "提示词库",
-    "VideoPromptRandomDraw": "随机抽卡",
+    # v3.100：显示名统一 AllBuy- 前缀（仅 UI 层；类名/别名映射不动，旧工作流不受影响）
+    "PromptLibrary": "AllBuy-提示词库",
+    "PromptRandomDraw": "AllBuy-随机抽卡",
+    "VideoPromptLibrary": "AllBuy-提示词库",
+    "VideoPromptRandomDraw": "AllBuy-随机抽卡",
 }

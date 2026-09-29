@@ -321,5 +321,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "BatchImagePromptSelector": "批量选图（图↔提示词映射）",
+    # v3.100：AllBuy- 前缀；原名括注过长，映射细节由节点描述承载
+    "BatchImagePromptSelector": "AllBuy-批量选图",
 }

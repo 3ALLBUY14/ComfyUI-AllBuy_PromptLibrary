@@ -868,5 +868,6 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "MediaAssetLoader": "素材加载（图/音/视频）",
+    # v3.100：AllBuy- 前缀；格式括注保留（搜索时有辨识度）
+    "MediaAssetLoader": "AllBuy-素材加载（图/音/视频）",
 }
