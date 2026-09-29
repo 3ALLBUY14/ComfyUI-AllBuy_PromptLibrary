@@ -414,9 +414,20 @@ class ABCompareWidget {
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      const hadError = Boolean(images.a?.error || images.b?.error);
+      const isTemp = images.a?.ref?.type === "temp" || images.b?.ref?.type === "temp";
       ctx.fillText(
-        (images.a?.error || images.b?.error) ? "图片加载失败（文件缺失或路径失效）" : "连接图片开始对比",
-        rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
+        hadError
+          ? (isTemp
+            ? "对比预览是临时文件，已随后端重启被清理"
+            : "图片加载失败（文件缺失或路径失效）")
+          : "连接图片开始对比",
+        rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 - (hadError ? 8 : 0));
+      if (hadError) {
+        ctx.font = "11px sans-serif";
+        ctx.fillStyle = "#7d8798";
+        ctx.fillText("重新运行工作流即可恢复对比预览", rect[0] + rect[2] / 2, rect[1] + rect[3] / 2 + 12);
+      }
       ctx.restore();
       return;
     }
