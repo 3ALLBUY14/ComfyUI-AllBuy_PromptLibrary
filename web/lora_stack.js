@@ -18,13 +18,13 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.84");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.85");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
 const STACK_MAX_CHROME = 300;     // domWidget.y 异常钳制：正常 = 标题+输出槽，被撑大时按钳制值兜底
 const STACK_FALLBACK_CHROME = 96; // 首帧 domWidget.y 未就绪时的兜底 chrome
-const STACK_MIN_TOTAL_H = 200;    // 空态最小总高，防测量跑飞
+const STACK_MIN_TOTAL_H = 250;    // 空态最小总高，防测量跑飞
 const DEFAULT_WEIGHT = 1;
 const DEFAULT_WEIGHT_MIN = -3;
 const DEFAULT_WEIGHT_MAX = 3;
