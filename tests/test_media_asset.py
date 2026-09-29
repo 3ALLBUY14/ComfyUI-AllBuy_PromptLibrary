@@ -274,7 +274,12 @@ class LoadMediaTests(unittest.TestCase):
         self.assertEqual(tuple(vframes_t.shape), (1, 8, 8, 3))
         self.assertEqual(fps, 0)
         self.assertEqual(n_frames, 0)
-        self.assertEqual(video_info, {})
+        # v3.87：视频信息口零值占位（VHS 下标取值不再 KeyError），钉住十字段全零
+        self.assertEqual(video_info, {k: 0 for k in (
+            "source_fps", "source_frame_count", "source_duration",
+            "source_width", "source_height",
+            "loaded_fps", "loaded_frame_count", "loaded_duration",
+            "loaded_width", "loaded_height")})
         # 两个音频口都是静音占位 AUDIO dict
         for a in (v_audio, audio):
             self.assertIn("waveform", a)

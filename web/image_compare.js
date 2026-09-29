@@ -139,7 +139,8 @@ function loadImage(node, slot, ref) {
   };
   img.onerror = () => {
     if (node._abImages?.[slot]?.key === key) {
-      node._abImages[slot] = null;
+      // 留 error 标记（非清空）：draw 层据此显示"加载失败"徽标而非"未连接"
+      node._abImages[slot] = { key, ref, img: null, error: true };
       syncNative(node);
     }
     app.graph?.setDirtyCanvas?.(true, true);
@@ -195,7 +196,13 @@ function persistRefs(node) {
 
 function listLength(node) {
   const lists = node?._abRefLists || {};
-  return Math.max(lists.a?.length || 0, lists.b?.length || 0);
+  const aLen = lists.a?.length || 0;
+  const bLen = lists.b?.length || 0;
+  // 单侧批量：一页 = 当前帧 vs 前一帧，总页 = len-1（旧口径第 1 页自比较且
+  // onlyA/onlyB 的时间方向相反——两侧都改为"批量侧显示后一帧、对照侧前一帧"）
+  if (aLen && !bLen) return Math.max(1, aLen - 1);
+  if (!aLen && bLen) return Math.max(1, bLen - 1);
+  return Math.max(aLen, bLen);
 }
 
 function refAt(list, index) {
@@ -212,8 +219,9 @@ function applyListIndex(node, index) {
   const bList = lists.b || [];
   const onlyA = aList.length > 1 && !bList.length;
   const onlyB = bList.length > 1 && !aList.length;
-  const a = onlyB ? refAt(bList, node._abListIndex - 1) : refAt(aList, node._abListIndex);
-  const b = onlyA ? refAt(aList, node._abListIndex - 1) : refAt(bList, node._abListIndex);
+  const i = node._abListIndex;
+  const a = onlyB ? refAt(bList, i) : refAt(aList, i + (onlyA ? 1 : 0));
+  const b = onlyA ? refAt(aList, i) : refAt(bList, i + (onlyB ? 1 : 0));
   loadImage(node, "a", a);
   loadImage(node, "b", b);
 }
@@ -233,12 +241,17 @@ function selectNativeAt(node, pos) {
   if (!widget || (!hasA && !hasB)) return;
   if (hasA && hasB) {
     const rect = widget.imageRect || widget.rect;
-    const splitX = rect[0] + rect[2] * (node._abSplit ?? 50) / 100;
+    const splitX = rect[0] + rect[2] * splitPctOf(node) / 100;
     node._abNativeSlot = pos[0] <= splitX ? "a" : "b";
   } else {
     node._abNativeSlot = hasA ? "a" : "b";
   }
   syncNative(node);
+}
+
+function splitPctOf(node) {
+  // 读侧钳位 [0,100]：历史越界值（指针拖进留白产生）会让单侧消失、右键槽位分界偏出图区
+  return clamp(Number(node?._abSplit ?? 50) || 50, 0, 100);
 }
 
 function isPointLike(v) {
@@ -312,7 +325,7 @@ class ABCompareWidget {
   setSplitFromPos(pos) {
     const rect = this.imageRect || this.rect;
     if (!rect?.[2]) return false;
-    this.node._abSplit = ((pos[0] - rect[0]) / rect[2]) * 100;
+    this.node._abSplit = clamp(((pos[0] - rect[0]) / rect[2]) * 100, 0, 100);
     app.graph?.setDirtyCanvas?.(true, false);
     return true;
   }
@@ -332,7 +345,11 @@ class ABCompareWidget {
         app.graph?.setDirtyCanvas?.(true, true);
         return true;
       }
-      if (!hasImages(this.node)) return false;
+      if (!hasImages(this.node)) {
+        // 引用已在、图还在解码的空窗期也消费按下：否则穿透成节点拖拽把节点拖走
+        const pending = Object.values(this.node._abImages || {}).some((e) => e && !e.img);
+        return pending;
+      }
       this.node._abDragging = true;
       this.dragging = true;
       this.setSplitFromPos(pos);
@@ -384,7 +401,9 @@ class ABCompareWidget {
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("连接图片开始对比", rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
+      ctx.fillText(
+        (images.a?.error || images.b?.error) ? "图片加载失败（文件缺失或路径失效）" : "连接图片开始对比",
+        rect[0] + rect[2] / 2, rect[1] + rect[3] / 2);
       ctx.restore();
       return;
     }
@@ -394,7 +413,7 @@ class ABCompareWidget {
     const footerRect = [rect[0], rect[1] + imageAreaH, rect[2], FOOTER_HEIGHT];
     const base = fitRect(a || b, imageArea) || imageArea;
     this.imageRect = base;
-    const splitX = base[0] + base[2] * (node._abSplit ?? 50) / 100;
+    const splitX = base[0] + base[2] * splitPctOf(node) / 100;
 
     // B（右）整幅
     if (hasB) drawContained(ctx, b, base);
@@ -458,12 +477,25 @@ class ABCompareWidget {
     ctx.stroke();
 
     const total = listLength(node);
-    const pageLabel = total > 1 ? `${(Number(node._abListIndex) || 0) + 1}/${total}` : "";
+    // 双侧批量数量不等时短侧复用末帧：徽标显示各自序号（* = 末帧复用），
+    // 统一 N/total 会让用户误以为两同序号帧是配对产出的
+    const lists = node._abRefLists || {};
+    const aLen = (lists.a || []).length;
+    const bLen = (lists.b || []).length;
+    const idx = Number(node._abListIndex) || 0;
+    const pageLabel = total > 1
+      ? (aLen && bLen
+        ? `A·${Math.min(idx, aLen - 1) + 1}${idx >= aLen ? "*" : ""} B·${Math.min(idx, bLen - 1) + 1}${idx >= bLen ? "*" : ""}`
+        : `${idx + 1}/${total}`)
+      : "";
     const pageW = pageLabel ? ctx.measureText(pageLabel).width + 16 : 0;
     const centerReserve = pageW ? pageW + 12 : 6;
     const half = Math.max(1, (footerRect[2] - BADGE_INSET * 2 - centerReserve) / 2);
     if (hasA) drawBadge(ctx, dimLabel(images.a, "A"), footerRect, "left");
     if (hasB) drawBadge(ctx, dimLabel(images.b, "B"), footerRect, "right");
+    // 单侧加载失败：徽标位给出失败提示（此前该侧无声消失，用户以为没接图）
+    if (!hasA && images.a?.error) drawBadge(ctx, "A 加载失败", footerRect, "left");
+    if (!hasB && images.b?.error) drawBadge(ctx, "B 加载失败", footerRect, "right");
     if (total > 1) {
       const bw = pageW;
       const bx = footerRect[0] + (footerRect[2] - bw) / 2;
@@ -497,6 +529,9 @@ function installWidget(node) {
 
 function activate(node) {
   if (!isTargetNode(node)) return;
+  // dispose 后挂起的 onConfigure setTimeout 不再复活：否则会对已删节点重装 widget
+  // 并经 restoreRefs 发起无人回收的幽灵 /view 请求
+  if (node._abDisposed) return;
   suppressNativePreviewWidget(node);
   installWidget(node);
   restoreRefs(node);
@@ -505,6 +540,7 @@ function activate(node) {
 
 function dispose(node) {
   if (!node) return;
+  node._abDisposed = true;
   const images = node._abImages || {};
   for (const entry of new Set([images.a, images.b].filter(Boolean))) {
     if (entry.img) releaseDecoded(entry.img);
@@ -529,6 +565,12 @@ app.registerExtension({
     nodeType.prototype.onConfigure = function () {
       onConfigure?.apply(this, arguments);
       setTimeout(() => activate(this), 0);
+    };
+    const onAdded = nodeType.prototype.onAdded;
+    nodeType.prototype.onAdded = function () {
+      onAdded?.apply(this, arguments);
+      // 撤销删除（Ctrl+Z）恢复节点：解除 dispose 标记并重装对比 widget
+      if (this._abDisposed) { this._abDisposed = false; activate(this); }
     };
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {

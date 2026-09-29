@@ -13,7 +13,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 const API = "/allbuy_promptlibrary";
 const NODE_NAME = "MediaAssetLoader";
 const NODE_WIDTH = 470;
-const MEDIA_VERSION = "v1.33"; // 面板右下角版本号 + CSS/JS 缓存戳，随迭代递增（v1.1、v1.2…）
+const MEDIA_VERSION = "v1.34"; // 面板右下角版本号 + CSS/JS 缓存戳，随迭代递增（v1.1、v1.2…）
 const MEDIA_DIR = "allbuy_media";
 
 (function injectStyle() {
@@ -141,13 +141,13 @@ function probeLocal(file, type) {
 }
 
 // 原生 /upload/image 上传（VHS 同款 XHR 带进度），成功返回 {name, abs}
-function uploadOne(file, onProgress) {
+function uploadOne(file, onProgress, overwrite = false) {
   return new Promise((resolve, reject) => {
     const fd = new FormData();
     fd.append("image", file);
     fd.append("subfolder", MEDIA_DIR);
     fd.append("type", "input");
-    fd.append("overwrite", "false");
+    fd.append("overwrite", overwrite ? "true" : "false");
     const req = new XMLHttpRequest();
     req.open("POST", "/upload/image");
     req.upload.addEventListener("progress", (e) => {
@@ -261,7 +261,9 @@ function startMediaPanel(node, container, wManifest) {
         if (d.duration > 0 && !a.duration) { a.duration = d.duration; touched = true; }
         if (d.w > 0 && !a.w) { a.w = d.w; a.h = d.h; touched = true; }
       }
-      if (touched) { save(); renderGrid(); }
+      // 只刷显示不入 save()：探测补的 fps/时长仅 UI 展示用（后端执行时自行探测），
+      // save 会把工作流标脏——用户只是打开面板浏览，不该弹「保存更改？」
+      if (touched) { renderGrid(); }
       else probeFailed.add(fname);
     } catch (e) { probeFailed.add(fname); }
     finally { state.probing.delete(fname); }
@@ -283,29 +285,40 @@ function startMediaPanel(node, container, wManifest) {
     const seq = ++state.uploadSeq;
     showProgress(`正在导入 0/${accepted.length} …`);
     let done = 0;
+    const importOne = async (file, type, onProgress, overwrite) => {
+      const up = await uploadOne(file, onProgress, overwrite);
+      const meta = await probeLocal(file, type);
+      if (state.assets.some((a) => a.file === up.rel)) {
+        // 本分发 ComfyUI 对重名上传 overwrite=false 是静默保留原文件（返回原名不改名）：
+        // 同 rel 再入清单只会多一张指向旧内容的卡，跳过并提示
+        toast(`「${up.name}」已存在（同名保留原文件），已跳过`);
+      } else {
+        state.assets.push({
+          id: uid(), file: up.rel, name: up.name, type,
+          label: up.name, size: file.size, mtime: file.lastModified / 1000 || Date.now() / 1000,
+          w: meta.w, h: meta.h, duration: meta.duration, fps: meta.fps,
+        });
+        if (type !== "image") probeAssetMeta(state.assets[state.assets.length - 1]);
+      }
+    };
+    const failedFiles = [];
     (async () => {
       for (const { file, type } of accepted) {
+        const onProgress = (p) =>
+          showProgress(`正在导入 ${done + 1}/${accepted.length}：${file.name}（${Math.round(p * 100)}%）`);
         try {
-          const up = await uploadOne(file, (p) =>
-            showProgress(`正在导入 ${done + 1}/${accepted.length}：${file.name}（${Math.round(p * 100)}%）`));
-          const meta = await probeLocal(file, type);
-          if (state.assets.some((a) => a.file === up.rel)) {
-            // 本分发 ComfyUI 对重名上传 overwrite=false 是静默保留原文件（返回原名不改名）：
-            // 同 rel 再入清单只会多一张指向旧内容的卡，跳过并提示
-            toast(`「${up.name}」已存在（同名保留原文件），已跳过`);
-          } else {
-            state.assets.push({
-              id: uid(), file: up.rel, name: up.name, type,
-              label: up.name, size: file.size, mtime: file.lastModified / 1000 || Date.now() / 1000,
-              w: meta.w, h: meta.h, duration: meta.duration, fps: meta.fps,
-            });
-            if (type !== "image") probeAssetMeta(state.assets[state.assets.length - 1]);
-          }
+          await importOne(file, type, onProgress, false);
         } catch (e) {
-          console.warn("[MediaAsset] 上传失败：", file.name, e);
+          // 失败不再静默：上传中断会在目标位置留下半传残文件并被「同名保留」规则钉死，
+          // 用 overwrite=true 重传一次顶掉它；仍失败才计入汇总清单
+          try { await importOne(file, type, onProgress, true); }
+          catch (e2) { console.warn("[MediaAsset] 上传失败：", file.name, e2); failedFiles.push(file.name); }
         }
         done++;
         showProgress(`正在导入 ${done}/${accepted.length} …`);
+      }
+      if (failedFiles.length) {
+        toast(`导入失败 ${failedFiles.length} 个：${failedFiles.slice(0, 3).join("、")}${failedFiles.length > 3 ? " 等" : ""}`);
       }
       if (state.uploadSeq === seq) hideProgress();
       save();
@@ -539,7 +552,9 @@ function startMediaPanel(node, container, wManifest) {
     if (trimmed) {
       const end = vp.end > 0 ? vp.end : (a.duration || 0);
       const fps = vp.fps > 0 ? vp.fps : (a.fps || 0);
-      const est = end > vp.start && fps > 0 ? Math.round((end - vp.start) * fps) : 0;
+      // 与后端同口径：不设上限时实际输出被 HARD_MAX_FRAMES=4096 兜底截断，UI 显示须一致
+      const hardCap = vp.max_frames > 0 ? vp.max_frames : 4096;
+      const est = end > vp.start && fps > 0 ? Math.min(Math.round((end - vp.start) * fps), hardCap) : 0;
       const cap = vp.max_frames > 0 && est > vp.max_frames ? `≤${vp.max_frames}` : "";
       return `选区 ${fmtSec(vp.start)}–${fmtSec(end)} → ${est ? est + (cap ? `(≤${vp.max_frames})` : "") + "帧" : "帧"}${fps ? "@" + fps + "fps" : ""}`;
     }
@@ -702,6 +717,8 @@ function startMediaPanel(node, container, wManifest) {
     els.gridFade.classList.toggle("off", !more);
   }
   function renderGrid() {
+    // 后台 probe/波形完成也会走到这里重建网格：保留滚动位置，浏览长列表不跳顶
+    const keepScroll = els.grid.scrollTop;
     els.grid.innerHTML = "";
     const list = visibleAssets();
     els.empty.style.display = list.length ? "none" : "flex";
@@ -719,6 +736,7 @@ function startMediaPanel(node, container, wManifest) {
       cols[target].appendChild(card);
     });
     cols.forEach((c) => els.grid.appendChild(c));
+    els.grid.scrollTop = keepScroll;
     updateGridFade();
     recalcHeight();
   }
@@ -1075,10 +1093,13 @@ function startMediaPanel(node, container, wManifest) {
       vp.max_frames = Math.min(99999, Math.round(readNum(nMax)));
       const fps = vp.fps > 0 ? vp.fps : (a.fps || 0);
       const end = vp.end > 0 ? vp.end : dur;
-      const est = end > vp.start && fps > 0 ? Math.round((end - vp.start) * fps) : 0;
-      const shown = vp.max_frames > 0 && est > vp.max_frames ? vp.max_frames : est;
+      // 与后端同口径：未设上限时被 HARD_MAX_FRAMES=4096 兜底截断，显示须一致
+      const hardCap = vp.max_frames > 0 ? vp.max_frames : 4096;
+      const rawEst = end > vp.start && fps > 0 ? Math.round((end - vp.start) * fps) : 0;
+      const est = Math.min(rawEst, hardCap);
+      const shown = vp.max_frames > 0 && rawEst > vp.max_frames ? vp.max_frames : est;
       calc.textContent = est
-        ? `实际输出：选区 ${(end - vp.start).toFixed(2)}s × ${fps || "?"}fps = ${est} 帧${vp.max_frames > 0 && est > vp.max_frames ? " → 截断为 " + vp.max_frames + " 帧" : ""} · 帧率口 = ${vp.fps > 0 ? vp.fps : "原速"}`
+        ? `实际输出：选区 ${(end - vp.start).toFixed(2)}s × ${fps || "?"}fps = ${rawEst} 帧${vp.max_frames > 0 && rawEst > vp.max_frames ? " → 截断为 " + vp.max_frames + " 帧" : (rawEst > 4096 && !vp.max_frames ? " → 截断为 4096 帧" : "")} · 帧率口 = ${vp.fps > 0 ? vp.fps : "原速"}`
         : "未指定帧率时按原速输出到结尾；终点留空 = 到结尾。";
       tLabel.innerHTML = "";
       tLabel.append(h("span", {}, ["入点 " + fmtSec(vp.start)]), h("span", {}, ["出点 " + (vp.end > 0 ? fmtSec(vp.end) : "结尾")]));
@@ -1279,11 +1300,19 @@ function startMediaPanel(node, container, wManifest) {
     audioDlg = dlg;
     refresh();
 
-    // 拉波形峰值绘制 SVG
+    // 拉波形峰值绘制 SVG（优先复用卡片侧 waveCache，少一次整段 PCM 解码）
     (async () => {
       try {
-        const d = await apiGet("/media/wave?name=" + encodeURIComponent(assetFileName(a)) + "&buckets=500");
-        if (d?.ok && d.peaks?.length) {
+        const fname = assetFileName(a);
+        let d = waveCache.get(fname);
+        if (!d) {
+          const r = await apiGet("/media/wave?name=" + encodeURIComponent(fname) + "&buckets=240");
+          if (r?.ok && r.peaks?.length) {
+            d = { peaks: r.peaks, duration: r.duration || 0 };
+            waveCache.set(fname, d);
+          }
+        }
+        if (d && d.peaks && d.peaks.length) {
           if (!duration && d.duration > 0) {
             duration = d.duration;
             sStart.max = String(duration); sEnd.max = String(duration);
@@ -1323,7 +1352,9 @@ function startMediaPanel(node, container, wManifest) {
     if (lightbox) lightbox.remove();
     const name = a.name || (a.file || "").split("/").pop();
     const ov = h("div", { class: "media-overlay" });
-    const src = `${API}/view?filename=${encodeURIComponent(name)}&subfolder=${MEDIA_DIR}&type=input`;
+    // 必须用 ComfyUI 根路由 /view（与音频试听弹窗同款）：插件前缀下没有 /view 路由，
+    // 写 ${API}/view 会 404 → 永远走下方转码降级，每次预览都全量重编码还截断长视频
+    const src = `/view?filename=${encodeURIComponent(name)}&subfolder=${MEDIA_DIR}&type=input`;
     let body;
     if (a.type === "video") {
       body = h("video", {
@@ -1365,7 +1396,7 @@ function startMediaPanel(node, container, wManifest) {
       });
     } else {
       body = h("img", { class: "media-lightbox-img", alt: name });
-      body.src = `${API}/media/thumb?name=${encodeURIComponent(name)}&w=1600`;
+      body.src = `${API}/media/thumb?name=${encodeURIComponent(name)}&w=1024`; // 后端钳 1024，写明口径防误判压缩 bug
     }
     const meta = [a.w ? ` · ${a.w}×${a.h}` : "", a.duration ? ` · ${fmtDur(a.duration)}` : ""].join("");
     const hd = h("div", { class: "media-dialog-hd" }, [name + meta]);
@@ -1461,6 +1492,7 @@ function startMediaPanel(node, container, wManifest) {
     _origOnRemovedPanel?.apply(this, arguments);
     document.removeEventListener("paste", onPaste);
     document.removeEventListener("pointerdown", onDocPointerClose, true);
+    ro?.disconnect(); // RO 持有 container 强引用，不摘会钉住整个面板闭包（ro 在下方创建，调用时已就绪）
   };
 
   // ---- DOM widget 与高度管理（bips 同款：缓存驱动，绝不现场测量）----

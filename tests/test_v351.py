@@ -89,17 +89,60 @@ class BipsCacheKeyTests(unittest.TestCase):
     def test_key_includes_library_signature(self):
         loc = {"source": "user", "name": "default"}
         c = bips.BatchImagePromptSelector.IS_CHANGED(self._mapping(loc), "")
-        self.assertEqual(len(c), 3)          # (库签名, 映射数据, 库数据)
+        # v3.87 起 4 元组：(库签名, 映射数据, 库数据, 输出图片签名)
+        self.assertEqual(len(c), 4)
         self.assertIsInstance(c[0], str)     # 首位 = 库内容签名（或 missing）
         c2 = bips.BatchImagePromptSelector.IS_CHANGED(self._mapping(loc), "")
         self.assertEqual(c, c2)              # 库没变 → 键稳定，可缓存
 
     def test_no_library_still_returns_key(self):
         c = bips.BatchImagePromptSelector.IS_CHANGED(self._mapping(None), "")
-        self.assertEqual(len(c), 3)
+        self.assertEqual(len(c), 4)
         # 无 locator 时 resolve 回退到 default 用户库：文件存在 → 真实签名；不存在 → "missing"
         self.assertIsInstance(c[0], str)
         self.assertTrue(c[0])
+
+    def test_dangling_links_dropped(self):
+        # v3.87：gid 已不在库内（删组/换库后遗留）的 links 不得把图片计入组映射，
+        # 否则输出 batch 含无提示词对应的废片
+        def mapping(links):
+            return {
+                "version": 1, "folder": "", "mode": "image_to_prompts",
+                "library_locator": None, "thumbnail_size": 96,
+                "images": [{"file": "x.png", "abs": "/tmp/x.png", "w": 1, "h": 1,
+                            "mtime": 1, "category": "", "group": "", "order": 0}],
+                "links": links,
+            }
+        resolved = bips.BatchImagePromptSelector._resolve_group_refs(
+            mapping([{"abs": "/tmp/x.png", "gid": "ghost"}]), [g("real")])
+        self.assertEqual(resolved, {})
+        resolved2 = bips.BatchImagePromptSelector._resolve_group_refs(
+            mapping([{"abs": "/tmp/x.png", "gid": "real"}]), [g("real")])
+        self.assertEqual(resolved2.get("real"), ["/tmp/x.png"])
+
+    def test_key_includes_real_image_signature(self):
+        # v3.87：输出图片是执行时磁盘现读的——替换同名文件（size/mtime 变）必须换键，
+        # 旧键只看映射快照里的 mtime，会命中旧缓存输出旧图
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            p = os.path.join(td, "a.png")
+            with open(p, "w") as f:
+                f.write("x")
+            m = json.dumps({
+                "version": 1, "folder": "", "mode": "image_to_prompts",
+                "library_locator": {"source": "inline", "name": "t"},
+                "thumbnail_size": 96,
+                "images": [{"file": "a.png", "abs": p, "w": 1, "h": 1,
+                            "mtime": 1, "category": "", "group": "", "order": 0}],
+                "links": [{"abs": p, "gid": "real"}],
+            })
+            data = json.dumps({"version": 1, "name": "t", "groups": [g("real")]})
+            k1 = bips.BatchImagePromptSelector.IS_CHANGED(m, data)
+            with open(p, "w") as f:
+                f.write("xy")
+            k2 = bips.BatchImagePromptSelector.IS_CHANGED(m, data)
+            self.assertEqual(len(k1), 4)
+            self.assertNotEqual(k1, k2)
 
 
 if __name__ == "__main__":

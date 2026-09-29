@@ -84,9 +84,11 @@ async function apiPost(path, body) {
   return r.json();
 }
 
-function imgUrl(abs, w) {
+function imgUrl(abs, w, mtime) {
   let u = API + "/image?path=" + encodeURIComponent(abs || "");
   if (w && w > 0) u += "&w=" + w;
+  // mtime 版本参数：服务端缩略图 Cache-Control 24h，磁盘替换同名文件后浏览器须能刷新
+  if (mtime) u += "&v=" + mtime;
   return u;
 }
 function uid() {
@@ -136,6 +138,8 @@ function startController(node) {
     folder: "",
     images: [],          // [{file, abs, w, h, mtime, category, group, order}]
     links: [],           // [{abs, gid}]
+    allLinks: [],        // 跨目录 links 运行时缓存（会话级）：切目录再切回可恢复挂组
+    metaByAbs: new Map(), // 跨目录图片元数据缓存（会话级）：往返不丢分组/排序
     mode: "image_to_prompts", // 旧字段，仅随 mapping_json 写出保兼容；不再有模式切换
     libraryLocator: null,
     libraryGroups: [],   // [{id, name, positive, negative}]
@@ -182,8 +186,13 @@ function startController(node) {
     [SORT_LABEL.custom]);
   els.groupByBtn = h("button", { class: "bips-btn", type: "button", title: "分组方式", onclick: cycleGroupBy }, [GROUPBY_LABEL.none]);
   els.bulkBtn = h("button", { class: "bips-btn", type: "button", title: "批量勾选与归类", onclick: () => { state.bulkMode = !state.bulkMode; if (!state.bulkMode) state.bulkSel.clear(); syncToolbar(); render(); } }, ["批量"]);
+  let searchTimer = 0;
   els.searchInput = h("input", { class: "bips-search", type: "text", placeholder: "搜索文件名/分类/组",
-    oninput: (e) => { state.search = e.target.value.trim(); render(); } });
+    oninput: (e) => {
+      // 防抖：每键全量重渲染在数百图下卡顿
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { state.search = e.target.value.trim(); render(); }, 150);
+    } });
   toolbar.append(els.folderInput, els.browseBtn, els.reloadBtn, sizeWrap, els.libBtn, els.viewBtn, els.sortBtn, els.groupByBtn, els.bulkBtn, els.searchInput);
   container.appendChild(toolbar);
 
@@ -272,6 +281,9 @@ function startController(node) {
   [0, 200, 800, 1600, 3000].forEach((t) => setTimeout(pruneStrayWidgets, t));
   const ro = new ResizeObserver(() => { recalcHeight(); syncMasonryCols(); });
   ro.observe(container);
+  // 节点删除时回收 RO：其持有 container 强引用，不摘会钉住整个面板闭包
+  const _origOnRemovedBips = node.onRemoved;
+  node.onRemoved = function () { _origOnRemovedBips?.apply(this, arguments); ro.disconnect(); };
   // 瀑布流：容器宽度变化导致列数变化时重排（和 recalcHeight 一样走 rAF 节流）
   function syncMasonryCols() {
     if (state.view !== "masonry") return;
@@ -357,28 +369,42 @@ function startController(node) {
   }
 
   // ---- 数据加载 ----
+  // 目录快速切换的响应竞态守卫：过期响应直接丢弃，防旧目录数据覆盖新目录并 save() 落盘
+  let imageLoadSeq = 0;
   async function loadImages() {
     if (!state.folder) { render(); return; }
+    const seq = ++imageLoadSeq;
     try {
       const data = await apiGet("/images?folder=" + encodeURIComponent(state.folder));
-      if (!data.ok) { render(); return; }
+      if (seq !== imageLoadSeq) return;
+      if (!data.ok) { state.loadError = "加载图片列表失败（后端不可用或未重启到新版）"; render(); return; }
+      state.loadError = "";
       state.root = data.root || "";
       const existing = new Map(state.images.map((im) => [im.abs, im]));
       state.images = data.images.map((im, i) => {
-        const prev = existing.get(im.abs);
-        return {
+        // 元数据优先从当前清单取，其次从跨目录持久缓存取（切走再切回不丢分组/排序）
+        const prev = existing.get(im.abs) || state.metaByAbs.get(im.abs);
+        const rec = {
           file: im.name, abs: im.abs, w: im.w, h: im.h, mtime: im.mtime || 0,
           category: prev ? prev.category : "",
           group: prev ? prev.group : "",
           order: prev ? prev.order : i,
         };
+        state.metaByAbs.set(im.abs, rec);
+        return rec;
       });
+      // links 往返恢复：从全量运行时缓存按当前目录有效 abs 过滤（去重），
+      // 切目录再切回不再丢挂组；allLinks 只在本次会话内存活
       const valid = new Set(state.images.map((im) => im.abs));
-      state.links = state.links.filter((l) => valid.has(l.abs));
+      const pool = state.allLinks.concat(state.links);
+      state.links = pool.filter((l, i) =>
+        valid.has(l.abs) && pool.findIndex((x) => x.abs === l.abs && x.gid === l.gid) === i);
+      state.allLinks = pool.filter((l, i) =>
+        pool.findIndex((x) => x.abs === l.abs && x.gid === l.gid) === i);
       render();
     } catch (e) {
       console.error("[BIPS] 加载图片失败", e);
-      render();
+      if (seq === imageLoadSeq) { state.loadError = "加载图片列表失败（网络异常）"; render(); }
     }
   }
 
@@ -510,6 +536,7 @@ function startController(node) {
     state.images.forEach((im) => { if ((im.group || "").trim()) mapped.add(im.abs); });
     const lib = state.libraryLocator ? (state.libraryLocator.name || "库") : "未选库";
     els.status.innerHTML = "";
+    if (state.loadError) els.status.appendChild(h("span", { style: "color:#f87171" }, [state.loadError]));
     const seg = (icon, label, val) => {
       els.status.appendChild(h("span", {}, [icon + " ", h("b", {}, [String(val)]), " " + label]));
     };
@@ -562,10 +589,12 @@ function startController(node) {
   }
 
   function renderGrid() {
+    // 重建网格保留滚动位置（批量勾选/指派后不再跳顶）
+    const keepScroll = els.body.scrollTop;
     const list = visibleImages();
     els.empty.style.display = list.length ? "none" : "block";
     els.grid.innerHTML = "";
-    if (!list.length) return;
+    if (!list.length) { els.body.scrollTop = keepScroll; return; }
     const keys = groupKeys(list);
     keys.forEach((key) => {
       const sectionImgs = key == null ? list : list.filter((im) => ((im[state.groupBy] || "未分组").trim() || "未分组") === key);
@@ -598,6 +627,7 @@ function startController(node) {
         sectionImgs.forEach((im) => wrap.appendChild(renderCard(im)));
       }
     });
+    els.body.scrollTop = keepScroll;
   }
 
   function renderCard(im) {
@@ -612,7 +642,7 @@ function startController(node) {
       ? `width:100%;aspect-ratio:${im.w} / ${im.h}`
       : "width:100%;height:var(--bips-size,96px)";
     const thumb = h("div", { class: "bips-thumb", style: thumbStyle }, [
-      h("img", { src: imgUrl(im.abs, Math.min(Math.max(MIN_THUMB * 2, Math.round(size * 2)), 512)), loading: "lazy", draggable: "false",
+      h("img", { src: imgUrl(im.abs, Math.min(Math.max(MIN_THUMB * 2, Math.round(size * 2)), 512), im.mtime), loading: "lazy", draggable: "false",
         title: "点击查看大图", style: "cursor:zoom-in",
         onclick: (e) => {
           e.stopPropagation();
@@ -821,30 +851,34 @@ function startController(node) {
   }
 
   // 面板指派/拖拽 = 写卡片的「分组」字段（徽标同步显示，面板与输出统一口径）
-  function assignToGroupField(abs, g) {
+  function assignToGroupField(abs, g, quiet) {
     const im = state.images.find((x) => x.abs === abs);
     if (!im || !g.name) return;
     im.group = g.name.trim();
-    render();
+    if (!quiet) render();
   }
   // 从组里移除：分组字段匹配则清字段，同时清理可能存在的旧链接
   function removeFromGroup(abs, g) {
     const im = state.images.find((x) => x.abs === abs);
     if (im && g.name && (im.group || "").trim() === g.name.trim()) im.group = "";
     state.links = state.links.filter((l) => !(l.abs === abs && l.gid === g.id));
+    state.allLinks = state.allLinks.filter((l) => !(l.abs === abs && l.gid === g.id));
     render();
   }
   function addLink(abs, gid) {
     if (!state.links.some((l) => l.abs === abs && l.gid === gid)) state.links.push({ abs, gid });
+    if (!state.allLinks.some((l) => l.abs === abs && l.gid === gid)) state.allLinks.push({ abs, gid });
     render();
   }
   function removeLink(abs, gid) {
     state.links = state.links.filter((l) => !(l.abs === abs && l.gid === gid));
+    state.allLinks = state.allLinks.filter((l) => !(l.abs === abs && l.gid === gid));
     render();
   }
   function assignBulkToGroup(g) {
     if (!state.bulkSel.size) return;
-    state.bulkSel.forEach((abs) => assignToGroupField(abs, g));
+    // 静默改字段、循环外统一渲染一次：N 张选中此前会触发 N 次全量渲染+序列化
+    state.bulkSel.forEach((abs) => assignToGroupField(abs, g, true));
     state.bulkSel.clear();
     state.bulkMode = false;
     syncToolbar();
@@ -1028,7 +1062,7 @@ function openImagePreview(im, originEl, ctx) {
   // 加载完成后消失（即“标题闪一下”）；顶栏用绝对定位固定在顶部，不随图片加载跳动
   // 预览用服务端预缩放图（长边 3200；屏幕显示上限 ~1400 CSS px，2x DPI 也足够）：
   // 原图动辄数千万像素，解码+首次绘制会长时间卡住主线程，把过渡动画冻在半透明帧
-  const img = h("img", { class: "bips-lightbox-img", src: imgUrl(im.abs, 3200), alt: "" });
+  const img = h("img", { class: "bips-lightbox-img", src: imgUrl(im.abs, 3200, im.mtime), alt: "" });
   img.style.opacity = "0"; // 大图加载完成后，与幽灵帧同帧切换显示
   const loading = h("div", { class: "bips-lightbox-loading" }, ["加载中…"]);
   const overlay = h("div", { class: "bips-menu-overlay bips-lightbox",
@@ -1179,9 +1213,12 @@ function showMenu(items, opts = {}) {
   const overlay = h("div", { class: "bips-menu-overlay" });
   const menu = h("div", { class: "bips-menu" });
   if (opts.title) menu.appendChild(h("div", { class: "bips-menu-title" }, [opts.title]));
-  items.forEach((it) => menu.appendChild(h("div", { class: "bips-menu-item", onclick: () => { document.body.removeChild(overlay); it.onClick && it.onClick(); } }, [it.label])));
+  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => { if (e.key === "Escape") close(); }; // 与 openFolderPicker/openFieldDialog 同款 Esc 出口
+  items.forEach((it) => menu.appendChild(h("div", { class: "bips-menu-item", onclick: () => { close(); it.onClick && it.onClick(); } }, [it.label])));
   overlay.appendChild(menu);
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) document.body.removeChild(overlay); });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey, true);
   document.body.appendChild(overlay);
 
   // 若提供了点击坐标，就把菜单锚定到点击位置，并做视口边界防溢出
@@ -1218,7 +1255,13 @@ function installBipsGraphToPromptHook() {
         if (node && node.type === NODE_NAME && typeof node._bipsInputs === "function") {
           const id = String(node.id);
           if (res.output && res.output[id] && res.output[id].inputs) {
-            Object.assign(res.output[id].inputs, node._bipsInputs());
+            const inputs = node._bipsInputs();
+            for (const k of Object.keys(inputs)) {
+              // 已连线的输入以链路为准，不用本地存储值覆盖上游节点
+              const slot = (node.inputs || []).find((i) => i && i.name === k);
+              if (slot && slot.link != null) continue;
+              res.output[id].inputs[k] = inputs[k];
+            }
           }
         }
       }

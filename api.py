@@ -108,8 +108,9 @@ async def save_library(request):
     if data is None:
         return _json_error("缺少 data")
     try:
-        library_store.save_library(locator, data)
-        cover.prune_orphans(data)  # v3.64：保存后回收不再被任何组引用的封面文件
+        await asyncio.to_thread(library_store.save_library, locator, data)
+        # prune 遍历 covers 目录并读全部库 JSON，同样丢线程池
+        await asyncio.to_thread(cover.prune_orphans, data)
         return web.json_response({"ok": True})
     except PermissionError as e:
         return _json_error(e, 403)
@@ -286,12 +287,15 @@ _IMAGE_MIME = {
 }
 
 
-def _image_response(path, w):
-    """带 w 参数时返回压缩 JPEG 缩略图（LRU），失败回退原图；否则按扩展名返回原图。"""
+async def _image_response(path, w):
+    """带 w 参数时返回压缩 JPEG 缩略图（LRU），失败回退原图；否则按扩展名返回原图。
+
+    PIL 全尺寸解码是重活（大图 0.5~2s），必须丢线程池，否则卡住事件循环上
+    所有 HTTP/WS（进度、队列状态全停摆）——与导出端点的 to_thread 同口径。"""
     if w and w > 0:
         try:
             return web.Response(
-                body=_make_thumb(path, w), content_type="image/jpeg",
+                body=await asyncio.to_thread(_make_thumb, path, w), content_type="image/jpeg",
                 headers={"Cache-Control": "public, max-age=86400"},
             )
         except Exception as e:  # noqa: BLE001
@@ -325,7 +329,7 @@ async def serve_image(request):
         w = int(request.query.get("w", "0") or 0)
     except ValueError:
         w = 0
-    return _image_response(path, w)
+    return await _image_response(path, w)
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +416,7 @@ async def cover_file(request):
         w = int(request.query.get("w", "0") or 0)
     except ValueError:
         w = 0
-    return _image_response(path, w)
+    return await _image_response(path, w)
 
 
 @_get("/cover/video")
@@ -440,7 +444,7 @@ async def media_thumb(request):
     except ValueError:
         w = 240
     try:
-        data = _make_thumb(path, max(32, min(w, 1024)))
+        data = await asyncio.to_thread(_make_thumb, path, max(32, min(w, 1024)))
         return web.Response(
             body=data, content_type="image/jpeg",
             headers={"Cache-Control": "public, max-age=86400"},
@@ -456,7 +460,7 @@ async def media_probe(request):
     path = media_asset.resolve_media_path(f"{media_asset.MEDIA_SUBDIR}/{name}")
     if not path or not os.path.isfile(path):
         return web.json_response({"ok": False, "error": "not found"}, status=404)
-    meta = media_asset.probe_asset(path)
+    meta = await asyncio.to_thread(media_asset.probe_asset, path)
     return web.json_response({"ok": True, "name": name, **meta})
 
 
@@ -471,7 +475,7 @@ async def media_wave(request):
     path = media_asset.resolve_media_path(f"{media_asset.MEDIA_SUBDIR}/{name}")
     if not path or not os.path.isfile(path):
         return web.json_response({"ok": False, "error": "not found"}, status=404)
-    peaks, duration = media_asset.wave_peaks(path, buckets)
+    peaks, duration = await asyncio.to_thread(media_asset.wave_peaks, path, buckets)
     return web.json_response({"ok": True, "name": name, "peaks": peaks, "duration": duration})
 
 
@@ -508,24 +512,27 @@ async def media_vthumb(request):
     if cached is not None:
         _VTHUMB_CACHE.move_to_end(key)  # 命中刷新位次（v3.58 起真 LRU，与缩略图缓存同款语义）
     else:
-        cap = cv2.VideoCapture(path)
-        if not cap.isOpened():
+        # cv2 open+seek+解码是重活，丢线程池防卡事件循环（wave/thumb/probe 同口径）
+        def _encode():
+            cap = cv2.VideoCapture(path)
+            if not cap.isOpened():
+                return None
+            if t > 0:
+                cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
+            ok, frame = cap.read()
+            cap.release()
+            if not ok or frame is None:
+                return None
+            h0, w0 = frame.shape[:2]
+            sc = w / float(max(w0, h0))
+            if sc < 1.0:
+                frame = cv2.resize(frame, (max(1, int(w0 * sc)), max(1, int(h0 * sc))),
+                                   interpolation=cv2.INTER_AREA)
+            ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            return buf.tobytes() if ok else None
+        cached = await asyncio.to_thread(_encode)
+        if cached is None:
             return web.Response(status=404, text="decode failed")
-        if t > 0:
-            cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
-        ok, frame = cap.read()
-        cap.release()
-        if not ok or frame is None:
-            return web.Response(status=404, text="decode failed")
-        h0, w0 = frame.shape[:2]
-        scale = w / float(max(w0, h0))
-        if scale < 1.0:
-            frame = cv2.resize(frame, (max(1, int(w0 * scale)), max(1, int(h0 * scale))),
-                               interpolation=cv2.INTER_AREA)
-        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
-        if not ok:
-            return web.Response(status=404, text="encode failed")
-        cached = buf.tobytes()
         _VTHUMB_CACHE[key] = cached
     while len(_VTHUMB_CACHE) > _VTHUMB_CACHE_MAX:
         _VTHUMB_CACHE.popitem(last=False)

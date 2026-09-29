@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.86"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.87"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -283,7 +283,9 @@ function createDropdown(opts = {}) {
 
 async function apiGet(path) {
   const r = await fetch(API + path);
-  return r.json();
+  // 后端 5xx 返回 HTML / 网络断开时 r.json() 会抛——统一折成 {ok:false}，
+  // 调用方（含无 try/catch 的 referenceCustom）不再出现 unhandled rejection
+  return r.json().catch(() => ({ ok: false, error: "响应不是 JSON（后端异常或未启动）" }));
 }
 async function apiPost(path, body) {
   const r = await fetch(API + path, {
@@ -746,9 +748,11 @@ function startController(node) {
   els.sepSelect = sepDD.root;
   sepDD.addEventListener("change", (v) => {
     if (v === "__custom__") {
-      state.customSep = true;
       const val = prompt("输入自定义分隔符（\\n 表示换行）：", wSeparator.value || ", ");
-      if (val) wSeparator.value = val.replace(/\\n/g, "\n");
+      if (val) {
+        state.customSep = true;
+        wSeparator.value = val.replace(/\\n/g, "\n");
+      } // 取消输入：不进入自定义态，标签与值保持原样
     } else {
       state.customSep = false;
       wSeparator.value = v;
@@ -1150,7 +1154,16 @@ function startController(node) {
     quickEditPanel.remove();
     quickEditPanel = null;
   }
+  // 只读库编辑入口统一拦截：此前 saveLibrary 对 readonly 静默 return 而内存态照常
+  // 渲染——收藏星/分类/标签/跨组拖拽看着成功，重开工作流全部消失
+  function readonlyBlock() {
+    if (!state.readonly) return false;
+    alert("当前库只读（内置库 / 自定义路径库），修改不会保存");
+    return true;
+  }
+
   function quickEditFor(g, kind, anchor) {
+    if (readonlyBlock()) return;
     closeQuickEdit();
     const isCat = kind === "cat";
     const curSet = new Set(isCat ? groupCats(g) : (g.tags || []));
@@ -1882,6 +1895,7 @@ function startController(node) {
   async function toggleStar(id) {
     const g = (state.libraryData?.groups || []).find((x) => x.id === id);
     if (!g) return;
+    if (readonlyBlock()) return;
     g.star = !g.star;
     await saveLibrary();
     renderList();
@@ -1893,6 +1907,7 @@ function startController(node) {
     const fromG = groups.find((x) => x.id === fromId);
     const toG = groups.find((x) => x.id === toId);
     if (!fromG || !toG) return;
+    if (readonlyBlock()) return;
     const toCats = groupCats(toG);
     if (toCats.length) fromG.categories = [...toCats];
     else { fromG.categories = []; delete fromG.category; }
@@ -1933,6 +1948,7 @@ function startController(node) {
   // v3.28：批量加分类/标签——弹出可选值网格，选一个即应用到所有选中组
   function bulkPick(kind) {
     if (!state.bulkSelection.size) { alert("请先选中至少一个组"); return; }
+    if (readonlyBlock()) return;
     closeQuickEdit();
     const isCat = kind === "cat";
     const panel = h("div", { class: "vpl-quickpanel" });
@@ -1985,6 +2001,7 @@ function startController(node) {
   // v3.28：清空选中组的分类
   async function bulkClearCat() {
     if (!state.bulkSelection.size) { alert("请先选中至少一个组"); return; }
+    if (readonlyBlock()) return;
     for (const g of (state.libraryData?.groups || [])) if (state.bulkSelection.has(g.id)) { g.categories = []; delete g.category; }
     await saveLibrary();
     renderList();
@@ -1994,6 +2011,7 @@ function startController(node) {
   // v3.28：从选中组批量移除指定标签
   function bulkPickRemoveTag() {
     if (!state.bulkSelection.size) { alert("请先选中至少一个组"); return; }
+    if (readonlyBlock()) return;
     const used = new Set();
     (state.libraryData?.groups || []).forEach((g) => {
       if (state.bulkSelection.has(g.id)) (g.tags || []).forEach((t) => used.add(t));
@@ -2271,9 +2289,17 @@ function startController(node) {
     if (!state.libraryData) return;
     const name = prompt("保存为用户库，名称：", state.libraryData.name || "");
     if (!name) return;
-  try {
-    const res = await apiPost("/library/create", { name: name.trim() });
-    await apiPost("/library/save", { locator: res.locator, data: state.libraryData });
+    // 写入新名称：否则新库显示名沿用源库 name，下拉会出现两条同名记录
+    const data = { ...state.libraryData, name: name.trim() };
+    try {
+      const res = await apiPost("/library/create", { name: name.trim() });
+      try {
+        await apiPost("/library/save", { locator: res.locator, data });
+      } catch (e) {
+        // 半失败回滚：create 成功而 save 失败会留下空库，重试同名必撞「库已存在」
+        try { await apiPost("/library/delete", { locator: res.locator }); } catch (_) {} // eslint-disable-line no-empty
+        throw e;
+      }
       await loadLibraries();
       await switchLibrary(res.locator, null);
     } catch (e) {
@@ -2659,6 +2685,10 @@ function startRandomController(node) {
       }
     } catch (e) {
       console.error("[VPL-RD] /draw 失败：", e);
+      // 清掉上一次的高亮与结果：旧种子的高亮叠在新种子的标签上会误导抽中口径
+      state.drawnIds = new Set();
+      state.drawnCards = [];
+      state.drawnPos = ""; state.drawnNeg = "";
     }
     renderList();
     renderResult();

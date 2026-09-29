@@ -185,8 +185,22 @@ class BatchImagePromptSelector:
                     has_wc = True
             if has_wc:
                 import secrets
-                return ("wildcard", lib_sig, 映射数据, secrets.token_hex(8))
-            return (lib_sig, 映射数据, 库数据)
+                return ("wildcard", lib_sig, 映射数据, 库数据, secrets.token_hex(8))
+            # 输出图片签名（v3.87）：IMAGE 是执行时从磁盘现读的，映射里的 mtime 只是
+            # 上次扫描快照——磁盘上替换/编辑同名图片后不点刷新直接入队，缓存必须失效
+            active_abs = set()
+            for files in group_files.values():
+                active_abs.update(files)
+            img_sigs = []
+            for e in cfg.get("images", []):
+                p = e.get("abs")
+                if p and p in active_abs:
+                    try:
+                        st = os.stat(p)
+                        img_sigs.append(f"{p}:{st.st_mtime_ns}:{st.st_size}")
+                    except OSError:
+                        img_sigs.append(f"{p}:missing")
+            return (lib_sig, 映射数据, 库数据, tuple(img_sigs))
         except Exception:
             return (映射数据, 库数据)
 
@@ -216,7 +230,10 @@ class BatchImagePromptSelector:
                 abs_path = e.get("abs")
                 if abs_path and (e.get("group") or "").strip() == name and abs_path not in files:
                     files.append(abs_path)
-        return {gid: f for gid, f in by_gid.items() if f}
+        # 悬空 links（gid 已不在库内：删组/换库后遗留）不再计入——否则这些图仍会
+        # 进输出 batch，而提示词已无对应组，下游产出无提示词对应的废片（v3.87）
+        valid_gids = {g.get("id") for g in groups if isinstance(g, dict)}
+        return {gid: f for gid, f in by_gid.items() if f and gid in valid_gids}
 
     @classmethod
     def _load_groups(cls, cfg, library_data):

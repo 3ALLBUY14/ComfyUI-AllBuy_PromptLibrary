@@ -669,11 +669,20 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     dialog.appendChild(h("div", { class: "vpl-dialog-body vpl-editor-split" }, [mediaCol, form]));
     dialog.appendChild(footer);
     overlay.appendChild(dialog);
-    overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(null); });
+    // 误点遮罩不应直接丢稿：有编辑痕迹先确认；Esc 出口与其它浮层一致
+    let dirty = false;
+    dialog.addEventListener("input", () => { dirty = true; });
+    dialog.addEventListener("change", () => { dirty = true; });
+    const guardClose = () => {
+      if (dirty && !confirm("有未保存的修改，确定放弃并关闭？")) return;
+      close(null);
+    };
+    overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) guardClose(); });
+    document.addEventListener("keydown", onEscKey, true);
     // v3.64：Ctrl+V 粘贴截图直接当预览图（只接管图片文件粘贴，文本粘贴不受影响）
     overlay.addEventListener("paste", (e) => {
       const img = [...(e.clipboardData?.files || [])].find((f) => f.type.startsWith("image/"));
-      if (img) { e.preventDefault(); imgSlot.upload(img); }
+      if (img) { e.preventDefault(); dirty = true; imgSlot.upload(img); }
     });
     document.body.appendChild(overlay);
 
@@ -681,6 +690,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     setTimeout(() => nameInput.focus(), 50);
 
     function close(result) {
+      document.removeEventListener("keydown", onEscKey, true);
       overlay.remove();
       resolve(result);
     }

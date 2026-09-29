@@ -636,6 +636,13 @@ def load_images_to_tensor(entries, scale):
         return None, []
     max_w = max(im.width for im in pils)
     max_h = max(im.height for im in pils)
+    # 内存预算闸（与视频侧 staged_budget 同款）：8K×10 张量级的 float32 堆叠
+    # 直接 OOM，报错并给出路好过让进程无声消失
+    need = len(pils) * max_w * max_h * 3 * 4
+    if need > 8 * 1024 ** 3:
+        raise RuntimeError(
+            f"选中图片输出过大：堆叠 {len(pils)} 张 {max_w}×{max_h} 约需 {need / 1024 ** 3:.1f}GB"
+            "（预算 8GB）。请减少选中数量，或用 ⚙ 缩放设置缩小分辨率。")
     tensors = []
     for im in pils:
         if im.width == max_w and im.height == max_h:
@@ -797,7 +804,14 @@ class MediaAssetLoader:
         by_id = {a.get("id"): a for a in manifest["assets"] if isinstance(a, dict)}
         out_fps = 0
         frame_count = 0
-        video_info = {}
+        # 零值占位：VHS VideoInfo 系节点用 video_info["source_fps"] 等下标取值，
+        # 空 dict 会让下游 KeyError 整图报错（v3.56 帧口占位同款动机，此处补信息口）
+        video_info = {k: 0 for k in (
+            "source_fps", "source_frame_count", "source_duration",
+            "source_width", "source_height",
+            "loaded_fps", "loaded_frame_count", "loaded_duration",
+            "loaded_width", "loaded_height",
+        )}
         v_audio = silent_audio()
         # v3.56：先占位——未选视频 / 文件失效 / 解码失败（选区非法等）时视频帧口
         # 也必须返回合法 IMAGE tensor，下游不允许收到 None（v3.55 曾因此

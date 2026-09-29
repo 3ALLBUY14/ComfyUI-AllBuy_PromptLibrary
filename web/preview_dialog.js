@@ -192,13 +192,17 @@ function openShell(title, body, width = 720) {
   const dialog = h("div", { class: "vpl-dialog", style: `max-width:min(${width}px, calc(100vw - 32px))` });
   const header = h("div", { class: "vpl-dialog-title" }, [
     h("span", {}, title),
-    h("button", { class: "vpl-icon-btn", title: "关闭", onclick: () => overlay.remove(), html: ICON_CLOSE }),
+    h("button", { class: "vpl-icon-btn", title: "关闭", onclick: () => closeDlg(), html: ICON_CLOSE }),
   ]);
   const bodyWrap = h("div", { class: "vpl-dialog-body vpl-preview-body" }, [body]);
   dialog.appendChild(header);
   dialog.appendChild(bodyWrap);
   overlay.appendChild(dialog);
-  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) overlay.remove(); });
+  // Esc 出口（与其它浮层口径一致）；统一 close 摘监听防泄漏
+  const closeDlg = () => { overlay.remove(); document.removeEventListener("keydown", dlgEsc, true); };
+  const dlgEsc = (e) => { if (e.key === "Escape") closeDlg(); };
+  document.addEventListener("keydown", dlgEsc, true);
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) closeDlg(); });
   document.body.appendChild(overlay);
   return { overlay, dialog, bodyWrap };
 }
@@ -251,7 +255,13 @@ export function previewMerged({ groups, selectedIds, separator = ", ", prepend =
             h("div", { class: "vpl-merge-item-head" }, [
               h("span", { class: "vpl-dot", style: `background:${b.group.color || "#888"}` }),
               h("span", {}, `${i + 1}. ${b.group.name || "未命名"}`),
-              b.group.category ? h("span", { class: "vpl-tag" }, b.group.category) : null,
+              // 分类口径与主面板一致：优先 categories 数组（v3.12 起主字段），旧单值兜底
+              (Array.isArray(b.group.categories) && b.group.categories.length) || b.group.category
+                ? h("span", { class: "vpl-tag" },
+                    (Array.isArray(b.group.categories) && b.group.categories.length)
+                      ? b.group.categories.join(" / ")
+                      : b.group.category)
+                : null,
             ]),
             h("div", { class: "vpl-merge-item-text" }, b.text),
           ])
