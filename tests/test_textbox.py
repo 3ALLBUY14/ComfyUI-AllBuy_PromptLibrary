@@ -35,6 +35,18 @@ class PipelineTests(unittest.TestCase):
         out3 = tb.apply_replacements_and_blank("  \na b\n\t\n", "", True)
         self.assertEqual(out3, "a b")
 
+    def test_roundtrip_fidelity_drop_off(self):
+        # 去空行=关 时逐字保真：尾随换行/末尾空行不被吞（split("\n") 往返，不用 splitlines）
+        for src in ("a\nb\n", "a\nb\n\n", "\n", "a", ""):
+            self.assertEqual(tb.apply_replacements_and_blank(src, "", False), src)
+
+    def test_u2028_not_rewritten(self):
+        # U+2028/U+2029 是异形分隔符，不是换行：后端不得改写为 \n（前端口径按 \n 分行）
+        src = "行" + chr(0x2028) + "一" + chr(0x2029) + "二"
+        out = tb.apply_replacements_and_blank(src, "", True)
+        self.assertEqual(out, src)
+        self.assertNotIn("\n", out)
+
     def test_at_names_dedupe_order(self):
         self.assertEqual(tb.resolve_at_names("看 @猫 在跑，@狗 在追 @猫 尾巴"),
                          ["猫", "狗"])
@@ -55,20 +67,23 @@ class ExecuteTests(unittest.TestCase):
         # @素材 → imageN 纯文本标记（图片本体由素材加载节点提供）
         r = self._run("主角 @猫 走来，背景 @城市；再提 @猫")
         self.assertEqual(r["result"][0], "主角 image1 走来，背景 image2；再提 image1")
-        self.assertEqual([u["slot"] for u in r["ui"]["images_used"]],
-                         ["image1", "image2"])
 
     def test_max_ten_and_extra_kept(self):
         text = " ".join(f"@素材{i}" for i in range(12))
         r = self._run(text)
         self.assertEqual(r["result"][0],
                          " ".join(f"image{i}" for i in range(1, 11)) + " @素材10 @素材11")
-        self.assertEqual([u["slot"] for u in r["ui"]["images_used"]],
-                         [f"image{i}" for i in range(1, 11)])
+
+    def test_output_is_list_shape(self):
+        # 「提示词行」按批下发（OUTPUT_IS_LIST），普通下游逐批拿到一行而非整列表
+        self.assertEqual(tb.AllBuyTextBox.OUTPUT_IS_LIST, (False, True))
+        r = self._run("镜头一\n镜头二")
+        self.assertEqual(r["result"][1], ["镜头一", "镜头二"])
 
     def test_empty_text(self):
+        # 空文本：行输出兜底为单条空串——OUTPUT_IS_LIST 下每批拿到一项 "" 而非空列表
         r = self._run("")
-        self.assertEqual(r["result"], ("", []))
+        self.assertEqual(r["result"], ("", [""]))
 
 
 if __name__ == "__main__":

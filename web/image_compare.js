@@ -689,10 +689,6 @@ function installWidget(node) {
   node._abAutoWidget = wAuto0 || null;
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
   tidy();
-  node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
-  node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
-  // v3.89 事故的持久化超大尺寸收治（图区随高度自适应拉伸后，超大料仍有意义，上限放宽）
-  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, 1024), MIN_HEIGHT);
 }
 
 function activate(node) {
@@ -702,6 +698,14 @@ function activate(node) {
   if (node._abDisposed) return;
   suppressNativePreviewWidget(node);
   installWidget(node);
+  // 高度钳制放 activate（新建与早退分支都执行）：加载时序是 installWidget 先钳
+  // 构造默认 size，随后 node.configure 恢复存档超大 size，早退分支不再进新建分支
+  node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
+  node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
+  // v3.89 事故的持久化超大尺寸收治（图区随高度自适应拉伸后，超大料仍有意义，上限放宽）
+  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, 1024), MIN_HEIGHT);
+  // 悬停跟随随存档恢复：installWidget 早退分支不读 properties，必须在这里回填
+  node._abHover = Boolean(node.properties?.ab_hover);
   if (node._abHoverWidget) node._abHoverWidget.value = node._abHover; // 工作流恢复后同步开关显示
   restoreRefs(node);
   syncNative(node);

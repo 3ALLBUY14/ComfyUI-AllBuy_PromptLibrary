@@ -25,7 +25,7 @@ import json
 import os
 
 from . import library_store, merger, constants
-from .media_asset import IMAGE_EXTS
+from .media_asset import IMAGE_EXTS, stack_pils_to_tensor
 
 
 def resolve_root(folder):
@@ -76,16 +76,15 @@ def load_images_to_tensor(image_entries):
     """把图片条目列表读成 ComfyUI IMAGE tensor (B,H,W,3) float32 0-1。
 
     不同尺寸用 letterbox（居中黑边）填充到统一最大尺寸，避免拉伸变形。
-    读取失败/空列表返回 None。惰性导入 torch/numpy/PIL，避免模块加载期依赖失败。
+    读取失败/空列表返回 None。堆叠与 8GB 内存闸走 media_asset.stack_pils_to_tensor
+    共享实现（此前本副本无预算检查，几百张大图无提示 OOM 杀死进程）。
+    惰性导入 torch/numpy/PIL，避免模块加载期依赖失败。
     """
-    import numpy as np
-    import torch
     from PIL import Image
 
     if not image_entries:
         return None
     pils = []
-    max_w = max_h = 0
     for e in image_entries:
         abs_path = e.get("abs") or e.get("file") or ""
         if not abs_path or not os.path.isfile(abs_path):
@@ -95,20 +94,9 @@ def load_images_to_tensor(image_entries):
         except Exception:
             continue
         pils.append(im)
-        max_w = max(max_w, im.width)
-        max_h = max(max_h, im.height)
     if not pils:
         return None
-    tensors = []
-    for im in pils:
-        if im.width == max_w and im.height == max_h:
-            canvas = im
-        else:
-            canvas = Image.new("RGB", (max_w, max_h), (0, 0, 0))
-            canvas.paste(im, ((max_w - im.width) // 2, (max_h - im.height) // 2))
-        arr = np.asarray(canvas, dtype=np.float32) / 255.0
-        tensors.append(torch.from_numpy(arr))
-    return torch.stack(tensors, dim=0)
+    return stack_pils_to_tensor(pils)
 
 
 def _parse_config(mapping):

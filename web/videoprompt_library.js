@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.104"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.105"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -2296,8 +2296,9 @@ function startController(node) {
       try {
         await apiPost("/library/save", { locator: res.locator, data });
       } catch (e) {
-        // 半失败回滚：create 成功而 save 失败会留下空库，重试同名必撞「库已存在」
-        try { await apiPost("/library/delete", { locator: res.locator }); } catch (_) {} // eslint-disable-line no-empty
+        // 半失败回滚：create 成功而 save 失败会留下空库，重试同名必撞「库已存在」；
+        // /library/delete 只认 body["name"]（传 create 返回的 sanitized 落盘名，与 _user_path 口径一致）
+        try { await apiPost("/library/delete", { name: res.locator.name }); } catch (_) {} // eslint-disable-line no-empty
         throw e;
       }
       await loadLibraries();

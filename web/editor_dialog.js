@@ -678,6 +678,8 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       close(null);
     };
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) guardClose(); });
+    // Esc 出口（preview_dialog 的 dlgEsc 同款）：先定义再挂监听，否则 executor 同步抛 ReferenceError、弹窗永不挂载
+    const onEscKey = (e) => { if (e.key === "Escape") guardClose(); };
     document.addEventListener("keydown", onEscKey, true);
     // v3.64：Ctrl+V 粘贴截图直接当预览图（只接管图片文件粘贴，文本粘贴不受影响）
     overlay.addEventListener("paste", (e) => {

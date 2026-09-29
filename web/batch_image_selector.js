@@ -531,8 +531,10 @@ function startController(node) {
 
   function renderStatus() {
     const total = state.images.length;
-    // 已挂组图片数 = 链接 ∪ 分组字段（与面板/输出同一口径）
-    const mapped = new Set(state.links.map((l) => l.abs));
+    // 悬空链接（gid 已不在当前库）不计入统计与输出，与后端 v3.87 口径一致
+    const liveLinks = state.links.filter((l) => state.libraryGroups.some((x) => x.id === l.gid));
+    // 已挂组图片数 = 有效链接 ∪ 分组字段（与面板/输出同一口径）
+    const mapped = new Set(liveLinks.map((l) => l.abs));
     state.images.forEach((im) => { if ((im.group || "").trim()) mapped.add(im.abs); });
     const lib = state.libraryLocator ? (state.libraryLocator.name || "库") : "未选库";
     els.status.innerHTML = "";
@@ -542,7 +544,7 @@ function startController(node) {
     };
     seg("🖼️", "张图", total);
     seg("🔗", "张已挂组", mapped.size);
-    seg("🧩", "条挂载", state.links.length);
+    seg("🧩", "条挂载", liveLinks.length);
     seg("📚", "库", lib);
   }
 
@@ -662,8 +664,11 @@ function startController(node) {
       ]),
     ]);
 
-    // 卡片上的提示词组链接（＋ 挂组 / 点 chip 移除）——映射的唯一交互入口，两种视角共用
-    const gids = state.links.filter((l) => l.abs === im.abs).map((l) => l.gid);
+    // 卡片上的提示词组链接（＋ 挂组 / 点 chip 移除）——映射的唯一交互入口，两种视角共用。
+    // 按当前库过滤：悬空 gid（删组/换库后 links 无清理）不裸渲染成「g-xxx ✕」，与后端输出口径一致
+    const gids = state.links
+      .filter((l) => l.abs === im.abs && state.libraryGroups.some((x) => x.id === l.gid))
+      .map((l) => l.gid);
     const chipsRow = h("div", { class: "bips-chips" }, [
       ...gids.map((gid) => {
         const g = state.libraryGroups.find((x) => x.id === gid);

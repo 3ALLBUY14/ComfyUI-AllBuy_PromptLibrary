@@ -91,7 +91,11 @@ def expand_wildcards(text, rng=None, vars=None):
     if rng is None:
         rng = random
     prev = None
-    while text != prev:
+    # 自指槽值（如 vars={'n': '{n}{'}）每轮展开净增字符、永不收敛——该循环跑在
+    # aiohttp 事件循环上会冻结全部 HTTP/WS，轮数封顶后返回已展开文本
+    for _round in range(200):
+        if text == prev:
+            break
         prev = text
         text = _WILDCARD_RE.sub(
             lambda m: _expand_slot(m, rng, vars),

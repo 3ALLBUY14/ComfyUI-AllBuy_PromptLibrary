@@ -190,11 +190,16 @@ function insertFromLibrary(onInsert) {
       opt.value = L.name;
       libSel.appendChild(opt);
     }
+    // 切库竞态守卫（batch_image_selector 同款）：连续切换时慢的旧响应后到，丢弃之，
+    // 防旧库列表覆盖新库、点行插入过期内容
+    let loadSeq = 0;
     const load = async () => {
+      const seq = ++loadSeq;
       list.replaceChildren();
       list.appendChild(el("div", "vpl-empty", "加载中…"));
       const loc = { source: "user", name: libSel.value };
       const d = await apiGet("/library?locator=" + encodeURIComponent(JSON.stringify(loc)));
+      if (seq !== loadSeq) return;
       list.replaceChildren();
       const groups = (d && d.ok && d.library && Array.isArray(d.library.groups)) ? d.library.groups : [];
       if (!groups.length) { list.appendChild(el("div", "vpl-empty", "该库没有提示词组")); return; }
@@ -274,8 +279,8 @@ function attach(node) {
       copyBtn.textContent = "✓ 已复制";
     } catch (_) {
       area.select();
-      document.execCommand?.("copy");
-      copyBtn.textContent = "✓";
+      const ok = document.execCommand?.("copy"); // 失败返回 false 不抛错，别报假成功
+      copyBtn.textContent = ok ? "✓" : "⚠";
     }
     setTimeout(() => { copyBtn.textContent = "复制"; }, 1200);
   });
@@ -318,7 +323,7 @@ function attach(node) {
   // ---- 文本区 ----
   const area = el("textarea", "vpl-input atb-area");
   area.value = (wText && wText.value) || "";
-  area.placeholder = "输入提示词，每行一段；@素材名 引用素材库图片（映射为 image1..10）";
+  area.placeholder = "输入提示词，每行一段；@素材名 按出现顺序标记为 image1..10（与素材库无匹配关系）";
   stopGraph(area);
   panel.appendChild(area);
 
@@ -386,6 +391,16 @@ function attach(node) {
   node._atbFlush = flush; // 入队/关页冲刷用（直接写穿，不走防抖）
   node._atbBadgeRefresh = updateBadge;
 
+  // 入队前冲刷：graphToPrompt 会 await widget.serializeValue——在这里写穿防抖
+  // 窗口，序列化拿到的必是最新文本。（此前监听的 app "queue" 事件在前端任何
+  // 版本都不存在，监听从未挂上=死代码，200ms 窗口内的编辑曾静默丢失）
+  for (const w of [wText, wRep]) {
+    if (w && !w._atbSerialFlush) {
+      w._atbSerialFlush = true;
+      w.serializeValue = async () => { flush(); return w.value; };
+    }
+  }
+
   // ---- DOM widget 与高度管理（兄弟节点同款配方） ----
   const domWidget = node.addDOMWidget("textbox_ui", "ATB_UI", container, {
     getValue() { return ""; },
@@ -406,12 +421,7 @@ function attach(node) {
   node._atbRecalc = () => recalcHeight(node);
 }
 
-// 入队/关页前冲刷防抖（丢尾防护，与 LoRA 堆栈同款；直接调 flush 写穿）
-app.addEventListener?.("queue", () => {
-  for (const n of app?.graph?._nodes || []) {
-    if (n?.type === NODE_NAME && typeof n?._atbFlush === "function") n._atbFlush();
-  }
-});
+// 关页前冲刷防抖（入队冲刷已改为 serializeValue 写穿，见 attach 内注释）
 window.addEventListener("beforeunload", () => {
   for (const n of app?.graph?._nodes || []) {
     if (n?.type === NODE_NAME && typeof n?._atbFlush === "function") n._atbFlush();
@@ -454,4 +464,4 @@ app.registerExtension({
   },
 });
 
-console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.104");
+console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.105");

@@ -54,20 +54,22 @@ function h(tag, props = {}, children = []) {
 }
 
 async function copyText(text, btn) {
+  let ok = false;
   try {
     await navigator.clipboard.writeText(text);
+    ok = true;
   } catch (e) {
-    // 回退方案
+    // 回退方案（execCommand 失败返回 false 不抛错，须按返回值显示）
     const ta = document.createElement("textarea");
     ta.value = text;
     document.body.appendChild(ta);
     ta.select();
-    try { document.execCommand("copy"); } catch (_) {}
+    try { ok = document.execCommand("copy"); } catch (_) {}
     ta.remove();
   }
   if (btn) {
     const old = btn.textContent;
-    btn.textContent = "已复制";
+    btn.textContent = ok ? "已复制" : "复制失败";
     btn.classList.add("vpl-btn-success");
     setTimeout(() => { btn.textContent = old; btn.classList.remove("vpl-btn-success"); }, 1200);
   }

@@ -599,14 +599,43 @@ def wave_peaks(abs_path, buckets=600):
     return [round(float(v), 4) for v in peaks], duration
 
 
+def stack_pils_to_tensor(pils):
+    """非空 RGB PIL 列表 → (B,H,W,3) float32 0-1 tensor，letterbox 居中黑边填充。
+
+    8GB 内存预算闸（与视频侧 staged_budget 同款）：堆叠 float32 需求超限直接
+    RuntimeError 并给出路，好过让进程无声 OOM。预分配缓冲逐张填入并边填边放
+    pils[i]=None：峰值 ≈1×需求（旧「逐张列表 + torch.stack」实测峰值 2.6~3×，
+    闸放行的大批量照样炸）。共享给素材加载与批量选图两条加载路径。
+    """
+    import numpy as np
+    import torch
+    from PIL import Image
+
+    max_w = max(im.width for im in pils)
+    max_h = max(im.height for im in pils)
+    need = len(pils) * max_w * max_h * 3 * 4
+    if need > 8 * 1024 ** 3:
+        raise RuntimeError(
+            f"图片批量输出过大：堆叠 {len(pils)} 张 {max_w}×{max_h} 约需 {need / 1024 ** 3:.1f}GB"
+            "（预算 8GB）。请减少图片数量或缩小图片分辨率。")
+    buf = np.zeros((len(pils), max_h, max_w, 3), dtype=np.float32)
+    for i, im in enumerate(pils):
+        if im.width == max_w and im.height == max_h:
+            canvas = im
+        else:
+            canvas = Image.new("RGB", (max_w, max_h), (0, 0, 0))
+            canvas.paste(im, ((max_w - im.width) // 2, (max_h - im.height) // 2))
+        buf[i] = np.asarray(canvas, dtype=np.float32) / 255.0
+        pils[i] = None  # 边拷边放：原图不与 buf 同时满额（load_video_frames 同款）
+    return torch.from_numpy(buf)
+
+
 def load_images_to_tensor(entries, scale):
     """选中图片按清单顺序 读入 → 裁剪（如有）→ 缩放 → 堆叠为 (B,H,W,3) batch。
 
     尺寸不一致 letterbox 居中黑边填充（与批量选图节点同策略）。
     返回 (tensor 或 None, 每张最终尺寸列表 [(w,h),...])；惰性导入 torch/numpy/PIL。
     """
-    import numpy as np
-    import torch
     from PIL import Image
 
     pils = []
@@ -634,24 +663,7 @@ def load_images_to_tensor(entries, scale):
         sizes.append((nw, nh))
     if not pils:
         return None, []
-    max_w = max(im.width for im in pils)
-    max_h = max(im.height for im in pils)
-    # 内存预算闸（与视频侧 staged_budget 同款）：8K×10 张量级的 float32 堆叠
-    # 直接 OOM，报错并给出路好过让进程无声消失
-    need = len(pils) * max_w * max_h * 3 * 4
-    if need > 8 * 1024 ** 3:
-        raise RuntimeError(
-            f"选中图片输出过大：堆叠 {len(pils)} 张 {max_w}×{max_h} 约需 {need / 1024 ** 3:.1f}GB"
-            "（预算 8GB）。请减少选中数量，或用 ⚙ 缩放设置缩小分辨率。")
-    tensors = []
-    for im in pils:
-        if im.width == max_w and im.height == max_h:
-            canvas = im
-        else:
-            canvas = Image.new("RGB", (max_w, max_h), (0, 0, 0))
-            canvas.paste(im, ((max_w - im.width) // 2, (max_h - im.height) // 2))
-        tensors.append(torch.from_numpy(np.asarray(canvas, dtype=np.float32) / 255.0))
-    return torch.stack(tensors, dim=0), sizes
+    return stack_pils_to_tensor(pils), sizes
 
 
 def video_info_dict(abs_path, loaded_fps, loaded_count, loaded_w, loaded_h):

@@ -100,7 +100,8 @@ def _as_id_set(locked_ids):
         return []
     seen, out = set(), []
     for i in locked_ids:
-        if i and i not in seen:
+        # 只收字符串 id（组 id 本就是字符串）：嵌套数组等不可哈希元素会让 set 去重抛 TypeError
+        if isinstance(i, str) and i and i not in seen:
             seen.add(i)
             out.append(i)
     return out

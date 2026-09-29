@@ -797,6 +797,11 @@ function renderStack(node) {
   updateFooter(node);
   if (node._stackFilterInput) {
     node._stackFilterInput.style.display = entries.length >= 6 ? "" : "none";
+    if (entries.length < 6 && node._stackFilter) {
+      // 入口已收起：残留筛选词仍隐藏不匹配行且无从清除（最坏整表看似清空），随行数回落一并清掉
+      node._stackFilter = "";
+      node._stackFilterInput.value = "";
+    }
   }
   applyRowFilter(node);
   recalcStackHeight(node);
@@ -1539,6 +1544,15 @@ async function attach(node) {
 
     renderStack(node);
     loadGroups().then(() => renderStack(node));
+
+    // 入队前冲刷：graphToPrompt 会 await widget.serializeValue——在这里写穿 120ms
+    // 防抖窗口，序列化拿到的必是最后一次编辑。（此前监听的 app "queue" 事件在前端
+    // 任何版本都不存在，监听从未挂上=死代码，窗口内编辑曾静默丢失）
+    const wJson = findWidget(node, "stack_json");
+    if (wJson && !wJson._aloraSerialFlush) {
+      wJson._aloraSerialFlush = true;
+      wJson.serializeValue = async () => { flushStackWrite(node); return wJson.value; };
+    }
   } finally {
     node._aloraAttaching = false;
   }
@@ -1558,9 +1572,8 @@ app.registerExtension({
         }
       }
     }, 500);
-    // 入队/关页前冲刷 stack_json 防抖：120ms 窗口内点排队或直接关页面不丢最后一次编辑
+    // 关页前冲刷 stack_json 防抖（入队冲刷已改为 stack_json.serializeValue 写穿，见 attach 内注释）
     const flushAll = () => { for (const n of app?.graph?._nodes || []) flushStackWrite(n); };
-    app.addEventListener?.("queue", flushAll);
     window.addEventListener("beforeunload", flushAll);
   },
   async nodeCreated(node) {

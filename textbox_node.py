@@ -1,8 +1,8 @@
 """AllBuy-文本框：大文本提示词编辑节点（后端执行逻辑，纯文本管线）。
 
 特性：
-- 双输出：「提示词」整段 STRING；「提示词行」按换行分段（每行一项的 STRING 列表，
-  下游按批消费）；两者都基于同一套处理管线
+- 双输出：「提示词」整段 STRING；「提示词行」按换行分段（OUTPUT_IS_LIST 按批
+  下发，普通下游逐批拿到一行）；两者都基于同一套处理管线
 - 去空行开关：只删纯空白行，不动行内内容
 - 替换表：每行「旧=新」（首个 = 分割，空行忽略），按顺序应用；先替换再去空行，
   替换产生的空行也会被清掉
@@ -40,7 +40,9 @@ def apply_replacements_and_blank(text, table, drop_blank):
     """替换表 → 去空行，返回处理后的整段文本。纯函数（测试与前端口径对齐用）。"""
     for old, new in _parse_replacements(table):
         text = text.replace(old, new)
-    lines = text.splitlines()
+    # 按 \n 分行（不用 splitlines）：textarea 值与工作流 JSON 的换行只会是 \n，
+    # split 往返严格保真，且 U+2028 等异形分隔符不被改写（splitlines 会吞原字符）
+    lines = text.split("\n")
     if drop_blank:
         lines = [ln for ln in lines if ln.strip()]
     return "\n".join(lines)
@@ -75,6 +77,9 @@ class AllBuyTextBox:
 
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("提示词", "提示词行")
+    # 「提示词行」按批下发：普通下游（如 CLIPTextEncode）逐批拿到一行，
+    # 而非把整个列表当一个值误用（官方执行器把 list 原样作单批值传递）
+    OUTPUT_IS_LIST = (False, True)
     CATEGORY = "AllBuy/提示词库"
     FUNCTION = "execute"
     SEARCH_ALIASES = ["文本框", "提示词框", "大文本", "textbox"]
@@ -82,12 +87,10 @@ class AllBuyTextBox:
     def execute(self, 文本="", 替换表="", 去空行=True, **kwargs):
         base = apply_replacements_and_blank(文本 or "", 替换表 or "", bool(去空行))
         full = apply_at_tokens(base)
-        lines = full.splitlines() if full else []
-        names = resolve_at_names(base)[:_MAX_IMAGES]
-        return {
-            "ui": {"images_used": [{"slot": f"image{i + 1}", "name": n} for i, n in enumerate(names)]},
-            "result": (full, lines),
-        }
+        # split("\n") 空文本得 [""]：OUTPUT_IS_LIST 下游每批拿到一项空串而非空批；
+        # ui.images_used 已删（v3.103 起前端徽标自行统计 @，该字段从未被消费）
+        lines = full.split("\n")
+        return {"result": (full, lines)}
 
 
 NODE_CLASS_MAPPINGS = {

@@ -21,7 +21,10 @@ _groups_lock = threading.Lock()
 
 def _sanitize_name(name):
     """分组名清洗：去除路径分隔与非法字符，空名回退「未命名」。"""
-    name = (name or "").strip()
+    if not isinstance(name, str):
+        # 盘上旧数据/导入请求里的 name 错型（123/['x']…）不再 .strip() 崩掉保存与加载两条路径
+        name = "" if name is None else str(name)
+    name = name.strip()
     name = re.sub(r'[\\/:*?"<>|]+', "_", name)
     return name or "未命名"
 
@@ -52,14 +55,15 @@ def _normalize_groups(raw):
                 if item and item not in loras:
                     loras.append(item)
         gid = g.get("id")
-        if not isinstance(gid, str) or not gid.strip() or gid in seen_ids:
+        if isinstance(gid, str):
+            gid = gid.strip()  # 先 strip 再判重：否则 " x " 与 "x" 判重互不相认、落盘归并出重复 id
+        if not isinstance(gid, str) or not gid or gid in seen_ids:
             candidate = f"g{i}"
             n = 0
             while candidate in seen_ids:
                 n += 1
                 candidate = f"g{i}_{n}"
             gid = candidate
-        gid = gid.strip()
         seen_ids.add(gid)
         groups.append({"id": gid, "name": name, "loras": loras})
     return groups
@@ -110,6 +114,10 @@ def save_groups(data):
             raise ValueError("分组数据缺少 groups 字段")
     else:
         raise ValueError("分组数据格式错误")
+    if not isinstance(groups_raw, list):
+        # groups 键错型（"abc"/123/…）：拒绝而非静默归一成空列表清光全部分组
+        #（与缺 groups 键同语义）；加载路径的 _normalize_groups 保持容错不受影响
+        raise ValueError("groups 字段必须是数组")
     groups = _ensure_default_group(_normalize_groups(groups_raw))
     payload = {"version": GROUPS_VERSION, "groups": groups}
     path = _groups_path()

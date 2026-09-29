@@ -147,6 +147,10 @@ def load_library(locator):
     data.setdefault("version", 1)
     data.setdefault("name", "")
     data.setdefault("groups", [])
+    # groups 元素错型（旧版畸形写盘落库）会让 draw/merge 全线 AttributeError
+    # 且主文件是合法 JSON 永不回退——读入时过滤归一，历史坏库自愈（lora_groups
+    # 的 _normalize_groups 同款口径）
+    data["groups"] = [g for g in data["groups"] if isinstance(g, dict)]
     return data
 
 
@@ -159,6 +163,9 @@ def save_library(locator, data):
         raise ValueError("库数据格式错误")
     data.setdefault("version", 1)
     data.setdefault("groups", [])
+    # 拒绝非数组 / 非 dict 元素：一次畸形写 = 整库永久报废（draw/merge 全线崩），故写盘前拦下
+    if not isinstance(data["groups"], list) or any(not isinstance(g, dict) for g in data["groups"]):
+        raise ValueError("groups 必须是 [{...}] 形式的对象数组")
     _atomic_write_json(path, data)
     return True
 

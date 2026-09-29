@@ -304,11 +304,14 @@ async def _image_response(path, w):
     ext = os.path.splitext(path)[1].lower()
     mime = _IMAGE_MIME.get(ext, "application/octet-stream")
     try:
-        with open(path, "rb") as f:
-            return web.Response(
-                body=f.read(), content_type=mime,
-                headers={"Cache-Control": "public, max-age=86400"},
-            )
+        # 大图同步 read 会停摆事件循环（v3.87 只改了缩略图分支），读盘同样丢线程池
+        def _read():
+            with open(path, "rb") as f:
+                return f.read()
+        return web.Response(
+            body=await asyncio.to_thread(_read), content_type=mime,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
     except Exception as e:  # noqa: BLE001
         return _json_error(e, 500)
 
