@@ -79,9 +79,13 @@ function iconBtn(label, title, onClick, cls = "") {
 // 入库 / 从库插入 弹窗（overlay 复用 .vpl-overlay 主题）
 // ---------------------------------------------------------------------------
 async function userLibraries() {
+  // /libraries 返回 {source, name, display_name, count}——没有 locator 字段
+  //（初版按 x.locator 过滤导致"识别不到已有库"），locator 由调用方按 source 组装
   const d = await apiGet("/libraries");
   const libs = (d && d.ok && Array.isArray(d.libraries)) ? d.libraries : [];
-  return libs.filter((x) => x.locator && x.locator.source === "user");
+  return libs
+    .filter((x) => x && x.source === "user" && x.name)
+    .map((x) => ({ name: x.name, display: x.display_name || x.name, count: x.count || 0 }));
 }
 
 function dialogShell(titleText, bodyBuild) {
@@ -159,8 +163,8 @@ function saveToLibrary(text, onDone) {
       return;
     }
     for (const L of libs) {
-      const opt = el("option", null, L.display || L.name || L.locator.name);
-      opt.value = L.locator.name;
+      const opt = el("option", null, `${L.display}${L.count ? `（${L.count} 组）` : ""}`);
+      opt.value = L.name;
       libSel.appendChild(opt);
     }
     nameInput.focus();
@@ -182,8 +186,8 @@ function insertFromLibrary(onInsert) {
       return;
     }
     for (const L of libs) {
-      const opt = el("option", null, L.display || L.name || L.locator.name);
-      opt.value = L.locator.name;
+      const opt = el("option", null, `${L.display}${L.count ? `（${L.count} 组）` : ""}`);
+      opt.value = L.name;
       libSel.appendChild(opt);
     }
     const load = async () => {
@@ -251,6 +255,7 @@ function attach(node) {
   // 去空行主题开关（须先于 tbar.append 声明，TDZ）
   const dropSwitch = el("div", "atb-switch" + ((wDrop ? wDrop.value !== false : true) ? " on" : ""));
   dropSwitch.title = "输出前删除空行";
+  dropSwitch.append(el("span", "atb-track"), el("span", "atb-switch-label", "去空行"));
   stopGraph(dropSwitch);
   dropSwitch.addEventListener("click", () => {
     const on = !dropSwitch.classList.contains("on");
@@ -261,6 +266,32 @@ function attach(node) {
   });
 
   const tbar = el("div", "atb-tbar");
+  const copyBtn = iconBtn("复制", "复制全部文本到剪贴板", async () => {
+    const t = area.value;
+    if (!t.trim()) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      copyBtn.textContent = "✓ 已复制";
+    } catch (_) {
+      area.select();
+      document.execCommand?.("copy");
+      copyBtn.textContent = "✓";
+    }
+    setTimeout(() => { copyBtn.textContent = "复制"; }, 1200);
+  });
+  const pasteBtn = iconBtn("粘贴", "读剪贴板插入到光标处（无权限时聚焦手动 Ctrl+V）", async () => {
+    let text = null;
+    try { text = await navigator.clipboard.readText(); } catch (_) {}
+    if (text && text.trim()) {
+      insertAtCursor(area, text);
+      scheduleSave();
+      pasteBtn.textContent = "✓";
+    } else {
+      area.focus();
+      pasteBtn.textContent = "⚠";
+    }
+    setTimeout(() => { pasteBtn.textContent = "粘贴"; }, 1200);
+  });
   const libBtn = iconBtn("入库", "把当前文本存为新提示词组（用户库）", () => {
     const t = area.value.trim();
     if (!t) return;
@@ -269,19 +300,19 @@ function attach(node) {
       setTimeout(() => { libBtn.textContent = "入库"; }, 1200);
     });
   }, "vpl-btn-primary");
-  const insBtn = iconBtn("从库插入", "从提示词库选择组插入文本", () => {
+  const insBtn = iconBtn("插入", "从提示词库选择组插入文本", () => {
     insertFromLibrary((text) => {
       insertAtCursor(area, text);
       scheduleSave();
       insBtn.textContent = "✓ 已插入";
-      setTimeout(() => { insBtn.textContent = "从库插入"; }, 1200);
+      setTimeout(() => { insBtn.textContent = "插入"; }, 1200);
     });
   });
   const repBtn = iconBtn("替换", "展开/收起替换表（每行 旧=新）", () => {
     repWrap.style.display = repWrap.style.display === "none" ? "" : "none";
     recalcHeight(node);
   });
-  tbar.append(libBtn, insBtn, repBtn, dropSwitch);
+  tbar.append(copyBtn, pasteBtn, libBtn, insBtn, repBtn, dropSwitch);
   panel.appendChild(tbar);
 
   // ---- 文本区 ----
@@ -423,4 +454,4 @@ app.registerExtension({
   },
 });
 
-console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.103");
+console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.104");
