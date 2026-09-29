@@ -316,6 +316,7 @@ class ABCompareWidget {
     this.rect = [0, 0, MIN_WIDTH, MIN_HEIGHT];
     this.imageRect = null;
     this.pageRect = null;
+    this.hoverBtnRect = null;
   }
 
   computeSize(width) {
@@ -338,6 +339,13 @@ class ABCompareWidget {
       return false;
     }
     if (type.includes("down") && event.button === 0 && pointInRect(pos, this.rect)) {
+      if (this.hoverBtnRect && pointInRect(pos, this.hoverBtnRect)) {
+        node._abHover = !node._abHover;
+        node.properties = node.properties || {};
+        node.properties.ab_hover = node._abHover;
+        app.graph?.setDirtyCanvas?.(true, true);
+        return true;
+      }
       const total = listLength(this.node);
       if (total > 1 && this.pageRect && pointInRect(pos, this.pageRect)) {
         applyListIndex(this.node, ((Number(this.node._abListIndex) || 0) + 1) % total);
@@ -357,8 +365,9 @@ class ABCompareWidget {
     }
     if (type.includes("move")) {
       if (!hasImages(this.node)) return Boolean(this.dragging);
-      // 鼠标在图上移动即实时跟随（无需按住）
-      if (pointInRect(pos, this.rect)) {
+      // 悬停模式开启或拖拽中时跟随（move 事件仅在部分分发路径到达 widget；
+      // 纯悬停的跟随由节点级 onMouseMove 钩子负责）
+      if ((this.node._abHover || this.dragging) && pointInRect(pos, this.rect)) {
         this.setSplitFromPos(pos);
         return true;
       }
@@ -468,6 +477,28 @@ class ABCompareWidget {
       ctx.fillText(flag, fx + fw / 2, fy + 10);
     }
 
+    // 悬停跟随开关（图区右上角胶囊）：开=鼠标在图内移动时分割线自动跟随，
+    // 无需按住拖拽（rgthree comparer 同款）；点击切换，随工作流持久化
+    const hoverOn = Boolean(node._abHover);
+    const hlabel = "悬停跟随 " + (hoverOn ? "开" : "关");
+    ctx.font = "600 11px sans-serif";
+    const hw2 = ctx.measureText(hlabel).width + 16;
+    const hx = base[0] + base[2] - hw2 - 8;
+    const hy = base[1] + 8;
+    this.hoverBtnRect = [hx, hy, hw2, 20];
+    ctx.fillStyle = hoverOn ? "rgba(99,102,241,0.88)" : "rgba(20,22,30,0.7)";
+    ctx.beginPath();
+    ctx.roundRect?.(hx, hy, hw2, 20, 999);
+    if (!ctx.roundRect) ctx.rect(hx, hy, hw2, 20);
+    ctx.fill();
+    ctx.strokeStyle = hoverOn ? "rgba(129,140,248,1)" : "rgba(255,255,255,0.16)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(hlabel, hx + hw2 / 2, hy + 10);
+
     // 底部分隔 + 徽标
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.lineWidth = 1;
@@ -521,6 +552,7 @@ class ABCompareWidget {
 function installWidget(node) {
   if (node._abWidget || typeof node.addCustomWidget !== "function") return;
   node._abSplit = node._abSplit ?? 50;
+  node._abHover = Boolean(node.properties?.ab_hover); // 悬停跟随模式（rgthree comparer 同款），随工作流持久化
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
   node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
   node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
@@ -571,6 +603,27 @@ app.registerExtension({
       onAdded?.apply(this, arguments);
       // 撤销删除（Ctrl+Z）恢复节点：解除 dispose 标记并重装对比 widget
       if (this._abDisposed) { this._abDisposed = false; activate(this); }
+    };
+    const onMouseMove = nodeType.prototype.onMouseMove;
+    nodeType.prototype.onMouseMove = function (e, pos) {
+      const r = onMouseMove?.apply(this, arguments);
+      // 悬停跟随模式：鼠标在图区内移动时分割线自动跟随。widget.mouse 的 move
+      // 事件仅在拖拽激活期可靠到达，纯悬停必须走节点级 onMouseMove
+      try {
+        if (this._abHover && !this._abDragging) {
+          const w = this._abWidget;
+          const rect = w?.imageRect || w?.rect;
+          if (rect?.[2] && pos[0] >= rect[0] && pos[0] <= rect[0] + rect[2]
+            && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]) {
+            const pct = clamp(((pos[0] - rect[0]) / rect[2]) * 100, 0, 100);
+            if (pct !== this._abSplit) {
+              this._abSplit = pct;
+              app.graph?.setDirtyCanvas?.(true, false);
+            }
+          }
+        }
+      } catch (_) { /* 悬停跟随异常不得影响画布其它交互 */ }
+      return r;
     };
     const onRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
