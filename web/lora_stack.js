@@ -214,6 +214,25 @@ function defaultEntry() {
   };
 }
 
+// 导入预设时的条目归一化（语义对齐后端 _normalize_entry）：非法条目返回 null 丢弃
+function normStackEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const base = defaultEntry();
+  const weight = Number.isFinite(Number(raw.weight)) ? roundedWeight(Number(raw.weight)) : base.weight;
+  let min = Number.isFinite(Number(raw.min)) ? Number(raw.min) : base.min;
+  let max = Number.isFinite(Number(raw.max)) ? Number(raw.max) : base.max;
+  if (!(max > min)) { min = base.min; max = base.max; }
+  return {
+    id: uid(),
+    name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : base.name,
+    weight,
+    min,
+    max,
+    enabled: raw.enabled !== false,
+    trigger: typeof raw.trigger === "string" ? raw.trigger.trim() : "",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 选择器：树状分级 + 自定义分组
 // ---------------------------------------------------------------------------
@@ -1325,7 +1344,60 @@ async function attach(node) {
       applyRowFilter(node);
     });
     node._stackFilterInput = rowFilter;
-    listHead.append(listTitle, rowFilter, invertBtn, addBtn);
+
+    // 堆栈预设导出/导入（独立于工作流文件的备份；图标钮静默常驻）
+    const flashBtn = (b, mark, svg) => {
+      if (b._flashTimer) clearTimeout(b._flashTimer); // 防上一次的还原计时提前抹掉本次闪示
+      b.innerHTML = mark;
+      b._flashTimer = setTimeout(() => { b.innerHTML = svg; b._flashTimer = null; }, 1200);
+    };
+    const exportSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    const importSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+    const stackExportBtn = makeIconBtn(exportSvg, "导出堆栈预设为 JSON 文件", () => {
+      const entries = (node._stackEntries || []).map(({ _editingRange, ...rest }) => rest);
+      const blob = new Blob([JSON.stringify({ version: 1, entries }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "allbuy_lora_stack.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "alora-stack-io");
+    const stackImportBtn = makeIconBtn(importSvg, "从 JSON 文件导入堆栈预设（覆盖当前列表）", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.onchange = () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let raw = null;
+          try {
+            const data = JSON.parse(reader.result);
+            raw = Array.isArray(data) ? data : (data && Array.isArray(data.entries) ? data.entries : null);
+          } catch (_) { /* raw 保持 null */ }
+          if (!raw) {
+            flashBtn(stackImportBtn, "✗", importSvg);
+            return;
+          }
+          const entries = raw.map(normStackEntry).filter(Boolean);
+          if (!entries.length || !window.confirm("导入将覆盖当前 " + (node._stackEntries || []).length + " 条 LoRA（导入 " + entries.length + " 条），继续？")) {
+            if (entries.length) flashBtn(stackImportBtn, "✗", importSvg);
+            return;
+          }
+          node._stackEntries = entries;
+          node._stackFilter = "";
+          if (node._stackFilterInput) node._stackFilterInput.value = "";
+          writeStack(node);
+          renderStack(node);
+          flashBtn(stackImportBtn, "✓", importSvg);
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    }, "alora-stack-io");
+    listHead.append(listTitle, rowFilter, stackImportBtn, stackExportBtn, invertBtn, addBtn);
     panel.appendChild(listHead);
 
     const list = document.createElement("div");
