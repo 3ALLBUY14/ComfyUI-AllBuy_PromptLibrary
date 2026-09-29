@@ -2,7 +2,7 @@
 //   DOM widget 面板：多行文本（同步「文本」widget，防抖写入+入队前冲刷）、
 //   主题开关「去空行」、「替换表」折叠编辑（每行 旧=新）、「入库」/「从库插入」
 //   快速对接提示词库（/libraries + /library + /library/save），@素材名 实时统计
-//   提示（→ image1..4）。样式沿用 .vpl-* 统一体系。
+//   提示（→ image1..10）。样式沿用 .vpl-* 统一体系。
 import { app } from "../../scripts/app.js";
 import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
@@ -287,7 +287,7 @@ function attach(node) {
   // ---- 文本区 ----
   const area = el("textarea", "vpl-input atb-area");
   area.value = (wText && wText.value) || "";
-  area.placeholder = "输入提示词，每行一段；@素材名 引用素材库图片（映射为 image1..4）";
+  area.placeholder = "输入提示词，每行一段；@素材名 引用素材库图片（映射为 image1..10）";
   stopGraph(area);
   panel.appendChild(area);
 
@@ -347,7 +347,7 @@ function attach(node) {
       if (m[1] && !ats.includes(m[1])) ats.push(m[1]);
     }
     const atText = ats.length
-      ? ` · @素材 ${ats.length}${ats.length > 4 ? "（前 4 个生效）" : ""}`
+      ? ` · @素材 ${ats.length}${ats.length > 10 ? "（前 10 个生效）" : ""}`
       : "";
     badge.textContent = `${nonBlank} 行${drop ? "（去空行）" : ""}${atText}`;
   }
@@ -423,4 +423,4 @@ app.registerExtension({
   },
 });
 
-console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.101");
+console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.102");

@@ -87,12 +87,15 @@ class ExecuteTests(unittest.TestCase):
             finally:
                 media_asset.media_root = orig_root
 
-    def test_max_four_and_extra_kept(self):
-        text = " ".join(f"@素材{i}" for i in range(6))
+    def test_max_ten_and_extra_kept(self):
+        text = " ".join(f"@素材{i}" for i in range(12))
         r = self._run(text)
-        self.assertEqual(r["result"][0], "image1 image2 image3 image4 @素材4 @素材5")
+        self.assertEqual(r["result"][0],
+                         " ".join(f"image{i}" for i in range(1, 11)) + " @素材10 @素材11")
         used = r["ui"]["images_used"]
-        self.assertEqual([u["slot"] for u in used], ["image1", "image2", "image3", "image4"])
+        self.assertEqual([u["slot"] for u in used], [f"image{i}" for i in range(1, 11)])
+        # 第 10 口为占位（未匹配文件），形状合法
+        self.assertEqual(tuple(r["result"][11].shape), (1, 64, 64, 3))
 
     def test_is_changed_includes_media_sig(self):
         import numpy as np

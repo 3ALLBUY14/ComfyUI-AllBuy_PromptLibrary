@@ -7,7 +7,7 @@
 - 替换表：每行「旧=新」（首个 = 分割，空行忽略），按顺序应用；先替换再去空行，
   替换产生的空行也会被清掉
 - @素材：文本中的 @素材名 引用素材库（input/allbuy_media），按首次出现顺序映射为
-  image1..image4 占位符写进提示词，对应「图片1..4」输出口加载该素材图片；
+  image1..image10 占位符写进提示词，对应「图片1..10」输出口加载该素材图片；
   未引用/加载失败的口输出黑图占位（口永不 None，与其他节点同口径）
 
 处理顺序：替换表 → 去空行 → @素材替换（@替换不产生空行）。
@@ -18,7 +18,7 @@ import re
 from . import constants
 from . import media_asset
 
-_MAX_IMAGES = 4
+_MAX_IMAGES = 10
 # @素材名：到空白或常见中英文标点为止（素材文件名来自社交平台，内容不可控，
 # 这里取宽松字符集、在标点/空白处截断，用户在提示词里写「@图片，」也能命中）
 _AT_TOKEN = re.compile(r"@([^\s@，。,.：:；;！!？?（）()【】\[\]、]+)")
@@ -115,8 +115,8 @@ class AllBuyTextBox:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING", "IMAGE", "IMAGE", "IMAGE", "IMAGE")
-    RETURN_NAMES = ("提示词", "提示词行", "图片1", "图片2", "图片3", "图片4")
+    RETURN_TYPES = ("STRING", "STRING") + ("IMAGE",) * 10
+    RETURN_NAMES = ("提示词", "提示词行") + tuple(f"图片{i}" for i in range(1, 11))
     CATEGORY = "AllBuy/提示词库"
     FUNCTION = "execute"
     SEARCH_ALIASES = ["文本框", "提示词框", "大文本", "textbox"]
@@ -148,7 +148,7 @@ class AllBuyTextBox:
                 used.append({"slot": f"image{i + 1}", "name": name, "found": bool(path)})
         return {
             "ui": {"images_used": used, "version": constants.PLUGIN_VERSION},
-            "result": (full, lines, imgs[0], imgs[1], imgs[2], imgs[3]),
+            "result": (full, lines, *imgs),
         }
 
 
