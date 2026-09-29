@@ -423,4 +423,4 @@ app.registerExtension({
   },
 });
 
-console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.102");
+console.info("[AllBuy_PromptLibrary] 文本框前端已加载 v3.103");

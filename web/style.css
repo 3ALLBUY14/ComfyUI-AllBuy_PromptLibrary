@@ -2574,6 +2574,8 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   white-space: pre; overflow-wrap: normal; overflow-x: auto;
 }
 .atb-reparea { min-height: 90px; max-height: 240px; }
+/* 占位提示按框宽换行（内容保持 pre 不折行，占位文本须随宽度折行显示全） */
+.atb-area::placeholder { white-space: normal; overflow-wrap: break-word; }
 .atb-repwrap { display: flex; flex-direction: column; gap: 4px; }
 .atb-badge { font-size: 11.5px; color: var(--vpl-text-muted); user-select: none; }
 .atb-field-label { font-size: 11.5px; color: var(--vpl-text-muted); margin-top: 2px; }

@@ -1,4 +1,4 @@
-"""AllBuy-文本框：大文本提示词编辑节点（后端执行逻辑）。
+"""AllBuy-文本框：大文本提示词编辑节点（后端执行逻辑，纯文本管线）。
 
 特性：
 - 双输出：「提示词」整段 STRING；「提示词行」按换行分段（每行一项的 STRING 列表，
@@ -6,17 +6,15 @@
 - 去空行开关：只删纯空白行，不动行内内容
 - 替换表：每行「旧=新」（首个 = 分割，空行忽略），按顺序应用；先替换再去空行，
   替换产生的空行也会被清掉
-- @素材：文本中的 @素材名 引用素材库（input/allbuy_media），按首次出现顺序映射为
-  image1..image10 占位符写进提示词，对应「图片1..10」输出口加载该素材图片；
-  未引用/加载失败的口输出黑图占位（口永不 None，与其他节点同口径）
+- @素材：纯文本标记——文本中的 @素材名 按首次出现顺序映射为 image1..image10
+  写进提示词（供识别 imageN 占位符的模型/下游使用，图片本体由素材加载节点提供）；
+  超过 10 个的 @标记保留原样
 
 处理顺序：替换表 → 去空行 → @素材替换（@替换不产生空行）。
+节点输出是输入文本的纯函数（不读任何文件），ComfyUI 原生输入缓存即够，
+无需自定义 IS_CHANGED。
 """
-import os
 import re
-
-from . import constants
-from . import media_asset
 
 _MAX_IMAGES = 10
 # @素材名：到空白或常见中英文标点为止（素材文件名来自社交平台，内容不可控，
@@ -48,22 +46,6 @@ def apply_replacements_and_blank(text, table, drop_blank):
     return "\n".join(lines)
 
 
-def _find_media_file(name):
-    """@名字 → 素材绝对路径：先按完整名解析（可含扩展名），再按去扩展名主干匹配。"""
-    p = media_asset.resolve_media_path(name)
-    if p:
-        return p
-    root = media_asset.media_root()
-    try:
-        files = sorted(os.listdir(root))
-    except OSError:
-        return ""
-    for f in files:
-        if os.path.splitext(f)[0] == name:
-            return media_asset.resolve_media_path(f)
-    return ""
-
-
 def resolve_at_names(text):
     """文本里按首次出现顺序去重的 @素材名（最多 _MAX_IMAGES 个参与映射）。"""
     seen = []
@@ -73,35 +55,11 @@ def resolve_at_names(text):
     return seen
 
 
-def _image_tensor(path):
-    """单图 → (1,H,W,3) float32；无路径/非图片/失败 → 64x64 黑图占位。惰性导入。"""
-    import numpy as np
-    import torch
-
-    im = None
-    if path and media_asset.asset_type(path) == "image":
-        try:
-            from PIL import Image
-
-            with Image.open(path) as f:
-                im = f.convert("RGB")
-        except Exception:  # noqa: BLE001
-            im = None
-    if im is None:
-        return torch.zeros((1, 64, 64, 3), dtype=torch.float32)
-    arr = np.asarray(im, dtype=np.float32) / 255.0
-    return torch.from_numpy(arr).unsqueeze(0)
-
-
-def _files_signature(paths):
-    sigs = []
-    for p in paths:
-        try:
-            st = os.stat(p)
-            sigs.append(f"{p}:{st.st_mtime_ns}:{st.st_size}")
-        except OSError:
-            sigs.append(f"{p}:missing")
-    return tuple(sigs)
+def apply_at_tokens(text):
+    """@素材名 → image1..imageN（按首次出现顺序，前 _MAX_IMAGES 个），返回替换后文本。"""
+    names = resolve_at_names(text)[:_MAX_IMAGES]
+    slot = {name: f"image{i + 1}" for i, name in enumerate(names)}
+    return _AT_TOKEN.sub(lambda m: slot.get(m.group(1), m.group(0)), text)
 
 
 class AllBuyTextBox:
@@ -115,40 +73,20 @@ class AllBuyTextBox:
             },
         }
 
-    RETURN_TYPES = ("STRING", "STRING") + ("IMAGE",) * 10
-    RETURN_NAMES = ("提示词", "提示词行") + tuple(f"图片{i}" for i in range(1, 11))
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("提示词", "提示词行")
     CATEGORY = "AllBuy/提示词库"
     FUNCTION = "execute"
     SEARCH_ALIASES = ["文本框", "提示词框", "大文本", "textbox"]
 
-    @classmethod
-    def IS_CHANGED(cls, 文本="", 替换表="", 去空行=True, **kwargs):
-        # 输出随文本/替换表/开关与被引用素材文件变：素材签名必须入键（缓存铁律）
-        try:
-            names = resolve_at_names(apply_replacements_and_blank(文本, 替换表, 去空行))[:_MAX_IMAGES]
-            sigs = _files_signature([_find_media_file(n) for n in names])
-            return (文本, 替换表, bool(去空行), sigs)
-        except Exception:  # noqa: BLE001
-            return (文本, 替换表, bool(去空行), "err")
-
     def execute(self, 文本="", 替换表="", 去空行=True, **kwargs):
         base = apply_replacements_and_blank(文本 or "", 替换表 or "", bool(去空行))
-        names = resolve_at_names(base)[:_MAX_IMAGES]
-        slot = {name: f"image{i + 1}" for i, name in enumerate(names)}
-        full = _AT_TOKEN.sub(lambda m: slot.get(m.group(1), m.group(0)), base)
+        full = apply_at_tokens(base)
         lines = full.splitlines() if full else []
-
-        imgs = []
-        used = []
-        for i in range(_MAX_IMAGES):
-            name = names[i] if i < len(names) else None
-            path = _find_media_file(name) if name else ""
-            imgs.append(_image_tensor(path))
-            if name:
-                used.append({"slot": f"image{i + 1}", "name": name, "found": bool(path)})
+        names = resolve_at_names(base)[:_MAX_IMAGES]
         return {
-            "ui": {"images_used": used, "version": constants.PLUGIN_VERSION},
-            "result": (full, lines, *imgs),
+            "ui": {"images_used": [{"slot": f"image{i + 1}", "name": n} for i, n in enumerate(names)]},
+            "result": (full, lines),
         }
 
 
