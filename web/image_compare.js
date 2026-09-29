@@ -622,17 +622,20 @@ app.registerExtension({
       if (this._abDisposed) { this._abDisposed = false; activate(this); }
     };
     const onMouseDown = nodeType.prototype.onMouseDown;
-    nodeType.prototype.onMouseDown = function (e, pos) {
+    nodeType.prototype.onMouseDown = function (event, pos) {
+      if (isTargetNode(this) && event?.button === 2) selectNativeAt(this, pos);
       const r = onMouseDown?.apply(this, arguments);
       if (r) return r;
       // 命中分发与布局条带解耦：computeSize 条带（MIN_HEIGHT）之外的图区点击
-      // 也转交 widget——否则拉高节点后只有顶部条带拖得动分割线
+      // 也转交 widget——否则拉高节点后只有顶部条带拖得动分割线。
+      // 注意：本文件只允许一个 onMouseDown 包装（v3.92 曾重复声明致整个模块
+      // 解析失败、扩展静默不加载，表现为对比节点整块空黑）
       const w = this._abWidget;
       if (w?.mouse && Array.isArray(pos)) {
         const rect = w.rect || w.imageRect;
         if (rect && pos[0] >= rect[0] && pos[0] <= rect[0] + rect[2]
           && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]) {
-          return w.mouse(e, pos);
+          return w.mouse(event, pos);
         }
       }
       return r;
@@ -685,11 +688,6 @@ app.registerExtension({
         this.imgs = imgs;
         this.images = images;
       }
-    };
-    const onMouseDown = nodeType.prototype.onMouseDown;
-    nodeType.prototype.onMouseDown = function (event, pos) {
-      if (isTargetNode(this) && event?.button === 2) selectNativeAt(this, pos);
-      return onMouseDown?.apply(this, arguments);
     };
     const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
     nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
