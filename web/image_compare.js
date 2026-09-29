@@ -1,8 +1,10 @@
 // AllBuy-A/B 图像对比画布
 //   画布 custom widget：深底图区，A/B 按 contain 同区适配；
 //   靛紫分割线 + 光晕，顶部 A｜B 胶囊随分割线移动；底部 A/B 尺寸徽标 + 批量页码(点击翻页)。
-//   交互：鼠标在图上移动 → 分割线实时跟随（无需按住）；按住左键拖动；右键切换原生预览槽位 A/B。
-//   空态文案「连接图片开始对比」。
+//   开关（自动输出/悬停跟随）= 隐藏绘制的原生 toggle widget，主题外观画在其条带位置，
+//   命中走 litegraph 原生分发（canvas 自绘命中在条带外不可靠，v3.94 事故）。
+//   交互：悬停跟随开启时鼠标在图内移动分割线自动跟随；按住左键拖动；右键切换原生预览槽位 A/B。
+//   空态文案「连接图片开始对比」/临时预览失效指引。
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
@@ -10,7 +12,7 @@ const NODE_NAME = "AllBuyABCompare";
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 320;
 const EDGE_PAD = 10;
-const FOOTER_HEIGHT = 64;
+const FOOTER_HEIGHT = 34;
 const BADGE_H = 22;
 const BADGE_INSET = 8;
 const BRAND = "#6366f1";
@@ -262,8 +264,10 @@ function selectNativeAt(node, pos) {
 }
 
 function splitPctOf(node) {
-  // 读侧钳位 [0,100]：历史越界值（指针拖进留白产生）会让单侧消失、右键槽位分界偏出图区
-  return clamp(Number(node?._abSplit ?? 50) || 50, 0, 100);
+  // 读侧钳位 [0,100]。不能用 `Number(x) || 50`：split=0（左侧最边）是合法值，
+  // 0 是 falsy 会被当成缺省弹回 50（"点左边缘弹回中间"事故）
+  const v = Number(node?._abSplit);
+  return clamp(Number.isFinite(v) ? v : 50, 0, 100);
 }
 
 function isPointLike(v) {
@@ -328,8 +332,6 @@ class ABCompareWidget {
     this.rect = [0, 0, MIN_WIDTH, MIN_HEIGHT];
     this.imageRect = null;
     this.pageRect = null;
-    this.tglHoverRect = null;
-    this.tglAutoRect = null;
   }
 
   computeSize(width) {
@@ -356,20 +358,7 @@ class ABCompareWidget {
       return false;
     }
     if (type.includes("down") && event.button === 0 && pointInRect(pos, this.rect)) {
-      // 底栏主题开关：悬停跟随 / 自动输出（原生行已隐藏，值经 widget 同步序列化）
-      if (this.tglHoverRect && pointInRect(pos, this.tglHoverRect)) {
-        node._abHover = !node._abHover;
-        node.properties = node.properties || {};
-        node.properties.ab_hover = node._abHover;
-        app.graph?.setDirtyCanvas?.(true, true);
-        return true;
-      }
-      if (this.tglAutoRect && pointInRect(pos, this.tglAutoRect)) {
-        const wAuto = (node.widgets || []).find((w) => w.name === "auto_output");
-        if (wAuto) wAuto.value = !wAuto.value;
-        app.graph?.setDirtyCanvas?.(true, true);
-        return true;
-      }
+      // 开关命中已移交 litegraph 原生 toggle 条带分发（本 widget 之后两行），此处只管翻页与拖拽
       const total = listLength(this.node);
       if (total > 1 && this.pageRect && pointInRect(pos, this.pageRect)) {
         applyListIndex(this.node, ((Number(this.node._abListIndex) || 0) + 1) % total);
@@ -408,12 +397,13 @@ class ABCompareWidget {
 
   draw(ctx, node, width, y) {
     const fullWidth = node.size?.[0] || width;
-    const fullHeight = node.size?.[1] || MIN_HEIGHT;
+    // 绘制固定在本 widget 的命中条带内（computeSize 320）：槽位行/开关行的原生
+    // 命中条带都在其外侧，画出去会盖住它们的交互区
     const rect = [
       EDGE_PAD,
       y + EDGE_PAD,
       Math.max(1, fullWidth - EDGE_PAD * 2),
-      Math.max(1, fullHeight - y - EDGE_PAD * 2),
+      Math.max(1, MIN_HEIGHT - y - EDGE_PAD * 2 - 4),
     ];
     this.rect = rect;
     this.imageRect = null;
@@ -512,7 +502,8 @@ class ABCompareWidget {
       ctx.fillText(flag, fx + fw / 2, fy + 10);
     }
 
-    // 底部分隔 + 徽标行（上行）+ 主题开关行（下行）
+    // 底部分隔 + 徽标行。开关行走 litegraph 原生 toggle 命中条带（本 widget 之后
+    // 两行 28px），主题外观在下方按行位置绘制
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -520,7 +511,7 @@ class ABCompareWidget {
     ctx.lineTo(footerRect[0] + footerRect[2], footerRect[1] + 0.5);
     ctx.stroke();
 
-    const badgeRow = [footerRect[0], footerRect[1], footerRect[2], 26];
+    const badgeRow = [footerRect[0], footerRect[1], footerRect[2], footerRect[3]];
     const total = listLength(node);
     // 双侧批量数量不等时短侧复用末帧：徽标显示各自序号（* = 末帧复用），
     // 统一 N/total 会让用户误以为两同序号帧是配对产出的
@@ -559,20 +550,19 @@ class ABCompareWidget {
       ctx.fillText(pageLabel, bx + bw / 2, by + BADGE_H / 2);
     }
 
-    // 开关行：悬停跟随 / 自动输出（原生行已隐藏，值经 widget 同步序列化）
-    const drawSwitch = (x, y, on, label) => {
-      const r = [x, y, SWITCH_W, SWITCH_H];
+    // 开关行主题外观：两只原生 toggle 的条带在本 widget 之后上下两行（自动输出 /
+    // 悬停跟随），命中由 litegraph 原生分发——外观按行位置绘制，画与命中必然同位
+    const drawSwitch = (x, y2, on, label) => {
       ctx.fillStyle = on ? "rgba(99,102,241,0.22)" : "rgba(20,22,30,0.72)";
       ctx.strokeStyle = on ? "rgba(129,140,248,0.95)" : "rgba(255,255,255,0.14)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect?.(x, y, r[2], r[3], 999);
-      if (!ctx.roundRect) ctx.rect(x, y, r[2], r[3]);
+      ctx.roundRect?.(x, y2, SWITCH_W, SWITCH_H, 999);
+      if (!ctx.roundRect) ctx.rect(x, y2, SWITCH_W, SWITCH_H);
       ctx.fill();
       ctx.stroke();
-      // 轨道 + 滑块
       const tx = x + 5;
-      const ty = y + (r[3] - 14) / 2;
+      const ty = y2 + (SWITCH_H - 14) / 2;
       ctx.fillStyle = on ? BRAND : "#3a3f52";
       ctx.beginPath();
       ctx.roundRect?.(tx, ty, 26, 14, 999);
@@ -586,40 +576,97 @@ class ABCompareWidget {
       ctx.font = "600 11.5px sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText(label, tx + 32, y + r[3] / 2 + 0.5);
-      return r;
+      ctx.fillText(label, tx + 32, y2 + SWITCH_H / 2 + 0.5);
     };
-    const cy = footerRect[1] + 30;
-    const autoOn = !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false));
-    const x0 = rect[0] + (rect[2] - (SWITCH_W * 2 + 10)) / 2;
-    this.tglHoverRect = drawSwitch(x0, cy, Boolean(node._abHover), "悬停跟随");
-    this.tglAutoRect = drawSwitch(x0 + SWITCH_W + 10, cy, autoOn, "自动输出");
+    const sx = rect[0] + (rect[2] - SWITCH_W) / 2;
+    drawSwitch(sx, y + MIN_HEIGHT + 3, !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false)), "自动输出");
+    drawSwitch(sx, y + MIN_HEIGHT + 31, Boolean(node._abHover), "悬停跟随");
 
     ctx.restore();
   }
 }
 
 function installWidget(node) {
-  if (node._abWidget || typeof node.addCustomWidget !== "function") return;
+  if (typeof node.addCustomWidget !== "function") return;
+  // 去重：多入口 activate 会重复进入本函数——compare 占位与多余开关行清掉，
+  // 已有开关行保留复用（全删重建会在 early-return 路径上丢失开关，v3.95 实测）
+  let wHover = null;
+  node.widgets = (node.widgets || []).filter((w) => {
+    if (w.name === "悬停跟随") {
+      if (wHover) return false; // 只留第一只
+      wHover = w;
+      return true;
+    }
+    if (w.name === "ab_compare" && w !== node._abWidget) return false; // 占位/旧实例
+    return true;
+  });
+  const wAuto0 = (node.widgets || []).find((w) => w.name === "auto_output");
+  // 统一排序：三只移到 widgets 尾部按 [compare, auto, hover] 排列——litegraph 自上
+  // 而下按数组顺序布局与分发，主题 pill 的绘制位置（compare 条带后两行）与之对齐
+  const tidy = () => {
+    const cmp = node._abWidget, au = wAuto0 || null, hv = wHover || null;
+    if (!cmp) return;
+    const rest = (node.widgets || []).filter((w) => w !== cmp && w !== au && w !== hv);
+    node.widgets = [...rest, cmp, au, hv].filter(Boolean);
+  };
+  if (node._abWidget) {
+    // compare 已装：确保开关在位与排序，不重复创建
+    if (!wHover) {
+      wHover = node.addWidget("toggle", "悬停跟随", node._abHover, (v) => {
+        node._abHover = v;
+        node.properties = node.properties || {};
+        node.properties.ab_hover = v;
+        app.graph?.setDirtyCanvas?.(true, true);
+      }, { serialize: false });
+      wHover.draw = () => {};
+      wHover.computeSize = () => [0, 28];
+    }
+    node._abHoverWidget = wHover;
+    node._abAutoWidget = wAuto0 || null;
+    wHover.value = node._abHover;
+    tidy();
+    return;
+  }
   node._abSplit = node._abSplit ?? 50;
   node._abHover = Boolean(node.properties?.ab_hover); // 悬停跟随模式（rgthree comparer 同款），随工作流持久化
-  // 主题化：隐藏原生 auto_output 行（值照常序列化，开关由画布底栏接管），体色对齐面板
-  const wAuto = (node.widgets || []).find((w) => w.name === "auto_output");
-  if (wAuto) {
-    wAuto.options = wAuto.options || {};
-    wAuto.options.hidden = true;
-    wAuto.hidden = true;
-    wAuto.computeSize = () => [0, -4];
-    wAuto.draw = () => {};
-  }
   node.color = "#1d2030";
   node.bgcolor = "#14161d";
+  // 两只开关 = 隐藏绘制的原生 toggle widget：命中交给 litegraph 条带分发
+  //（100% 可靠），主题外观由 compare.draw 画在其条带位置。教训：canvas 底栏 +
+  // 事件转发不可靠——底部在 widget 命中条带之外、原型钩子不可依赖（v3.94 事故）
+  const wAuto = wAuto0;
+  if (wAuto) {
+    if (wAuto.value !== true && wAuto.value !== false) wAuto.value = true; // 存档空值归一
+    wAuto.draw = () => {};
+    wAuto.computeSize = () => [0, 28];
+    const prevCb = wAuto.callback;
+    wAuto.callback = (v) => { app.graph?.setDirtyCanvas?.(true, true); prevCb?.(v); };
+  }
+  if (!wHover) {
+    wHover = node.addWidget("toggle", "悬停跟随", node._abHover, (v) => {
+      node._abHover = v;
+      node.properties = node.properties || {};
+      node.properties.ab_hover = v;
+      app.graph?.setDirtyCanvas?.(true, true);
+    }, { serialize: false });
+    wHover.draw = () => {};
+    wHover.computeSize = () => [0, 28];
+  }
+  node._abHoverWidget = wHover;
+  node._abAutoWidget = wAuto || null;
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
+  tidy();
+  // 顺序 [compare, auto, hover]：compare 条带 320 之后紧跟两只 28px 开关行 = 节点底部
+  const wi = node.widgets.indexOf(node._abWidget);
+  if (wi >= 0) {
+    if (wAuto) { node.widgets.splice(node.widgets.indexOf(wAuto), 1); node.widgets.splice(wi, 0, wAuto); }
+    node.widgets.splice(node.widgets.indexOf(node._abWidget) + 1, 0, wHover);
+  }
   node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
   node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
-  // v3.89 事故的持久化超大尺寸收治：反馈环撑出的高度已被存进工作流文件，
-  // 仅停止增长不够，装夹时须把异常高度一次拉回（正常手动拉高不受影响，上限内放行）
-  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, 1024), MIN_HEIGHT);
+  // v3.89 事故的持久化超大尺寸收治 + v3.95 起布局固定（条带 320 + 开关两行 56），
+  // 拉高节点只会留空白——存量超大尺寸直接收治到内容高
+  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, MIN_HEIGHT + 96), MIN_HEIGHT);
 }
 
 function activate(node) {
@@ -629,6 +676,7 @@ function activate(node) {
   if (node._abDisposed) return;
   suppressNativePreviewWidget(node);
   installWidget(node);
+  if (node._abHoverWidget) node._abHoverWidget.value = node._abHover; // 工作流恢复后同步开关显示
   restoreRefs(node);
   syncNative(node);
 }
