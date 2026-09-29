@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.75");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.83");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -26,8 +26,8 @@ const STACK_MAX_CHROME = 300;     // domWidget.y 异常钳制：正常 = 标题+
 const STACK_FALLBACK_CHROME = 96; // 首帧 domWidget.y 未就绪时的兜底 chrome
 const STACK_MIN_TOTAL_H = 200;    // 空态最小总高，防测量跑飞
 const DEFAULT_WEIGHT = 1;
-const DEFAULT_WEIGHT_MIN = 0;
-const DEFAULT_WEIGHT_MAX = 2;
+const DEFAULT_WEIGHT_MIN = -3;
+const DEFAULT_WEIGHT_MAX = 3;
 const WEIGHT_STEP = 0.01;
 const WEIGHT_DIGITS = 2;
 const STACK_WRITE_DELAY = 120;
@@ -619,13 +619,29 @@ function renderStack(node) {
     const val = document.createElement("span");
     val.className = "alora-val";
     val.textContent = formatWeight(entry.weight);
+    // 强度微调钮：±0.05 步进（滑块拖动难停在 0.05 档位上，按钮点得准）
+    const nudgeWeight = (d) => {
+      entry.weight = clamp(roundedWeight(entry.weight + d), Number(entry.min), Number(entry.max));
+      slider.value = String(entry.weight);
+      val.textContent = formatWeight(entry.weight);
+      writeStack(node);
+    };
+    const minusBtn = makeIconBtn(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12h14"/></svg>',
+      "强度 −0.05", () => nudgeWeight(-0.05), "alora-nudge",
+    );
+    const plusBtn = makeIconBtn(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>',
+      "强度 +0.05", () => nudgeWeight(0.05), "alora-nudge",
+    );
+    minusBtn.disabled = plusBtn.disabled = !entry.enabled;
     slider.addEventListener("input", () => {
       entry.weight = roundedWeight(slider.value);
       val.textContent = formatWeight(entry.weight);
       scheduleWriteStack(node);
     });
     slider.addEventListener("change", () => writeStack(node));
-    sliderWrap.append(slider, val);
+    sliderWrap.append(slider, minusBtn, val, plusBtn);
     row.appendChild(sliderWrap);
 
     // ⚙ / 🗑
@@ -781,6 +797,7 @@ function showGroupManager(node) {
 
   const groups = (cachedGroups.groups || []).map((g) => ({ ...g, loras: [...(g.loras || [])] }));
   let activeId = groups[0]?.id || null;
+  const rowById = new Map(); // 分组卡片行：选中态/计数原地更新，不重建列表（防点击闪烁、保滚动位置）
 
   const groupList = document.createElement("div");
   groupList.className = "vpl-list alora-grp-list";
@@ -836,10 +853,19 @@ function showGroupManager(node) {
         chip.title = name;
         stopGraph(chip);
         chip.addEventListener("click", () => {
-          if (inGroup) group.loras = group.loras.filter((n) => n !== name);
-          else group.loras.push(name);
-          renderChips();
-          renderList();
+          // 原地更新：不重建列表/芯片网格（防点击闪烁、保滚动位置）。
+          // 例外：移出后若仍属其他分组（跨组旧数据），按过滤口径它不再是本组候选，须从视图消失
+          if (inGroup) {
+            group.loras = group.loras.filter((n) => n !== name);
+            if (inOther.has(name)) chip.remove();
+            else chip.classList.remove("vpl-chip-on");
+          } else {
+            group.loras.push(name);
+            chip.classList.add("vpl-chip-on");
+          }
+          const cnt = rowById.get(group.id)?.querySelector(".vpl-item-cat");
+          if (cnt) cnt.textContent = String(group.loras.length);
+          head.textContent = group.name + "（" + group.loras.length + "）";
         });
         chips.appendChild(chip);
       }
@@ -850,6 +876,7 @@ function showGroupManager(node) {
 
   const renderList = () => {
     groupList.replaceChildren();
+    rowById.clear();
     for (const g of groups) {
       const row = document.createElement("div");
       row.className = "vpl-item" + (g.id === activeId ? " vpl-item-selected" : "");
@@ -892,9 +919,12 @@ function showGroupManager(node) {
         actions.append(rename, del);
       }
       row.append(name, count, actions);
+      rowById.set(g.id, row);
       row.addEventListener("click", () => {
+        if (activeId === g.id) return; // 重复点击已选组：短路，保住成员区已输入的搜索词
         activeId = g.id;
-        renderList();
+        // 原地切换选中类：不重建列表（防闪、保滚动位置，过渡在既有元素上平滑播放）
+        for (const [id, el] of rowById) el.classList.toggle("vpl-item-selected", id === activeId);
         renderMembers(g);
       });
       groupList.appendChild(row);
