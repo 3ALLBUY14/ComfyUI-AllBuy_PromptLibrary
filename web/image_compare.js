@@ -397,13 +397,15 @@ class ABCompareWidget {
 
   draw(ctx, node, width, y) {
     const fullWidth = node.size?.[0] || width;
-    // 绘制固定在本 widget 的命中条带内（computeSize 320）：槽位行/开关行的原生
-    // 命中条带都在其外侧，画出去会盖住它们的交互区
+    const fullHeight = node.size?.[1] || MIN_HEIGHT;
+    // 命中条带只有 computeSize 的 320，但绘制不受限：图区自适应拉伸到节点底
+    //（v3.95 曾固定条带高导致图区缩小+大片空白）。开关行走原生 toggle 条带
+    //（compare 之上两行），pill 画在其条带位置，画与命中同位
     const rect = [
       EDGE_PAD,
       y + EDGE_PAD,
       Math.max(1, fullWidth - EDGE_PAD * 2),
-      Math.max(1, MIN_HEIGHT - y - EDGE_PAD * 2 - 4),
+      Math.max(1, fullHeight - y - EDGE_PAD * 2),
     ];
     this.rect = rect;
     this.imageRect = null;
@@ -550,8 +552,8 @@ class ABCompareWidget {
       ctx.fillText(pageLabel, bx + bw / 2, by + BADGE_H / 2);
     }
 
-    // 开关行主题外观：两只原生 toggle 的条带在本 widget 之后上下两行（自动输出 /
-    // 悬停跟随），命中由 litegraph 原生分发——外观按行位置绘制，画与命中必然同位
+    // 开关行主题外观：画在两只原生 toggle 的条带位置（本 widget 条带之上两行 28px，
+    // 顺序 自动输出 / 悬停跟随），命中由 litegraph 原生分发——画与命中必然同位
     const drawSwitch = (x, y2, on, label) => {
       ctx.fillStyle = on ? "rgba(99,102,241,0.22)" : "rgba(20,22,30,0.72)";
       ctx.strokeStyle = on ? "rgba(129,140,248,0.95)" : "rgba(255,255,255,0.14)";
@@ -579,8 +581,8 @@ class ABCompareWidget {
       ctx.fillText(label, tx + 32, y2 + SWITCH_H / 2 + 0.5);
     };
     const sx = rect[0] + (rect[2] - SWITCH_W) / 2;
-    drawSwitch(sx, y + MIN_HEIGHT + 3, !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false)), "自动输出");
-    drawSwitch(sx, y + MIN_HEIGHT + 31, Boolean(node._abHover), "悬停跟随");
+    drawSwitch(sx, y - 56 + 3, !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false)), "自动输出");
+    drawSwitch(sx, y - 28 + 3, Boolean(node._abHover), "悬停跟随");
 
     ctx.restore();
   }
@@ -601,26 +603,38 @@ function installWidget(node) {
     return true;
   });
   const wAuto0 = (node.widgets || []).find((w) => w.name === "auto_output");
-  // 统一排序：三只移到 widgets 尾部按 [compare, auto, hover] 排列——litegraph 自上
-  // 而下按数组顺序布局与分发，主题 pill 的绘制位置（compare 条带后两行）与之对齐
+  // auto_output 改造对两条路径都必须生效（early-return 漏做会导致：值在变但
+  // 无重绘通知+外观未接管 = "点了没反应"，v3.95 实测）
+  if (wAuto0) {
+    if (wAuto0.value !== true && wAuto0.value !== false) wAuto0.value = true; // 存档空值归一
+    wAuto0.draw = () => {};
+    wAuto0.computeSize = () => [0, 28];
+    if (!wAuto0._abCbWrapped) {
+      const prevCb = wAuto0.callback;
+      wAuto0.callback = (v) => { app.graph?.setDirtyCanvas?.(true, true); prevCb?.(v); };
+      wAuto0._abCbWrapped = true;
+    }
+  }
+  if (!wHover) {
+    wHover = node.addWidget("toggle", "悬停跟随", node._abHover, (v) => {
+      node._abHover = v;
+      node.properties = node.properties || {};
+      node.properties.ab_hover = v;
+      app.graph?.setDirtyCanvas?.(true, true);
+    }, { serialize: false });
+    wHover.draw = () => {};
+    wHover.computeSize = () => [0, 28];
+  }
+  // 统一排序 [auto, hover, compare]：开关行条带紧贴 compare 条带之上，
+  // 主题 pill 画在条带位置（画与命中同位）；图区随节点高度自适应拉伸
   const tidy = () => {
     const cmp = node._abWidget, au = wAuto0 || null, hv = wHover || null;
     if (!cmp) return;
     const rest = (node.widgets || []).filter((w) => w !== cmp && w !== au && w !== hv);
-    node.widgets = [...rest, cmp, au, hv].filter(Boolean);
+    node.widgets = [...rest, au, hv, cmp].filter(Boolean);
   };
   if (node._abWidget) {
-    // compare 已装：确保开关在位与排序，不重复创建
-    if (!wHover) {
-      wHover = node.addWidget("toggle", "悬停跟随", node._abHover, (v) => {
-        node._abHover = v;
-        node.properties = node.properties || {};
-        node.properties.ab_hover = v;
-        app.graph?.setDirtyCanvas?.(true, true);
-      }, { serialize: false });
-      wHover.draw = () => {};
-      wHover.computeSize = () => [0, 28];
-    }
+    // compare 已装：只同步开关值与排序，不重复创建
     node._abHoverWidget = wHover;
     node._abAutoWidget = wAuto0 || null;
     wHover.value = node._abHover;
@@ -634,39 +648,14 @@ function installWidget(node) {
   // 两只开关 = 隐藏绘制的原生 toggle widget：命中交给 litegraph 条带分发
   //（100% 可靠），主题外观由 compare.draw 画在其条带位置。教训：canvas 底栏 +
   // 事件转发不可靠——底部在 widget 命中条带之外、原型钩子不可依赖（v3.94 事故）
-  const wAuto = wAuto0;
-  if (wAuto) {
-    if (wAuto.value !== true && wAuto.value !== false) wAuto.value = true; // 存档空值归一
-    wAuto.draw = () => {};
-    wAuto.computeSize = () => [0, 28];
-    const prevCb = wAuto.callback;
-    wAuto.callback = (v) => { app.graph?.setDirtyCanvas?.(true, true); prevCb?.(v); };
-  }
-  if (!wHover) {
-    wHover = node.addWidget("toggle", "悬停跟随", node._abHover, (v) => {
-      node._abHover = v;
-      node.properties = node.properties || {};
-      node.properties.ab_hover = v;
-      app.graph?.setDirtyCanvas?.(true, true);
-    }, { serialize: false });
-    wHover.draw = () => {};
-    wHover.computeSize = () => [0, 28];
-  }
   node._abHoverWidget = wHover;
-  node._abAutoWidget = wAuto || null;
+  node._abAutoWidget = wAuto0 || null;
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
   tidy();
-  // 顺序 [compare, auto, hover]：compare 条带 320 之后紧跟两只 28px 开关行 = 节点底部
-  const wi = node.widgets.indexOf(node._abWidget);
-  if (wi >= 0) {
-    if (wAuto) { node.widgets.splice(node.widgets.indexOf(wAuto), 1); node.widgets.splice(wi, 0, wAuto); }
-    node.widgets.splice(node.widgets.indexOf(node._abWidget) + 1, 0, wHover);
-  }
   node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
   node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
-  // v3.89 事故的持久化超大尺寸收治 + v3.95 起布局固定（条带 320 + 开关两行 56），
-  // 拉高节点只会留空白——存量超大尺寸直接收治到内容高
-  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, MIN_HEIGHT + 96), MIN_HEIGHT);
+  // v3.89 事故的持久化超大尺寸收治（图区随高度自适应拉伸后，超大料仍有意义，上限放宽）
+  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, 1024), MIN_HEIGHT);
 }
 
 function activate(node) {
