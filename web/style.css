@@ -2554,6 +2554,56 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .alora-slider .alora-nudge:hover { color: var(--vpl-text); background: var(--vpl-bg-hover); }
 .alora-slider .alora-nudge:disabled { opacity: .35; pointer-events: none; }
 
+/* ==========================================================================
+   文本框节点（AllBuy-文本框）：沿用 .vpl-* 统一体系
+   ========================================================================== */
+.atb-node { gap: 0; }
+.atb-panel {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-lg);
+  background: var(--vpl-bg-panel);
+}
+.atb-tbar { display: flex; align-items: center; gap: 6px; }
+.atb-tbar .vpl-btn { flex: none; }
+.atb-area {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  min-height: 200px; max-height: 640px;
+  line-height: 1.55; font-size: 13px;
+  font-family: var(--vpl-mono, ui-monospace, Consolas, monospace);
+  white-space: pre; overflow-wrap: normal; overflow-x: auto;
+}
+.atb-reparea { min-height: 90px; max-height: 240px; }
+.atb-repwrap { display: flex; flex-direction: column; gap: 4px; }
+.atb-badge { font-size: 11.5px; color: var(--vpl-text-muted); user-select: none; }
+.atb-field-label { font-size: 11.5px; color: var(--vpl-text-muted); margin-top: 2px; }
+/* 主题开关（与对比节点同款轨道滑块） */
+.atb-switch {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 9px 0 5px; border-radius: 999px; cursor: pointer;
+  background: rgba(20,22,30,0.72); border: 1px solid rgba(255,255,255,0.14);
+  font: 600 11.5px/1 inherit; color: #aab1c4; user-select: none;
+  transition: background .14s var(--vpl-ease), border-color .14s var(--vpl-ease);
+}
+.atb-switch.on { background: rgba(99,102,241,0.22); border-color: rgba(129,140,248,0.95); color: #e6e9ff; }
+.atb-switch::before {
+  content: ""; width: 26px; height: 14px; border-radius: 999px; background: #3a3f52;
+  transition: background .14s var(--vpl-ease);
+}
+.atb-switch.on::before { background: var(--vpl-primary, #6366f1); }
+.atb-switch::after {
+  content: ""; width: 10px; height: 10px; border-radius: 999px; background: #fff;
+  margin-left: -20px; transition: margin-left .14s var(--vpl-ease);
+}
+.atb-switch.on::after { margin-left: -6px; }
+/* 弹窗内 */
+.atb-dialog { max-width: 480px; }
+.atb-hint { margin-bottom: 4px; }
+.atb-select { width: 100%; }
+.atb-lib-list { max-height: 320px; overflow-y: auto; margin-top: 6px; }
+.atb-lib-item { cursor: pointer; }
+.atb-lib-prev { color: var(--vpl-text-muted); font-size: 11px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+
 /* 行尾操作 */
 .alora-rowacts { display: flex; gap: 2px; justify-content: flex-end; }
 .alora-gear.on { color: var(--vpl-primary); background: var(--vpl-primary-softer); }
