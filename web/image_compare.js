@@ -320,7 +320,10 @@ class ABCompareWidget {
   }
 
   computeSize(width) {
-    return [Math.max(MIN_WIDTH, width), MIN_HEIGHT];
+    // 命中区必须覆盖节点实际高度：固定返回 MIN_HEIGHT 会让 LiteGraph 只把节点顶部
+    // 320px 条带当作 widget 可点区，节点拉高后图区下部的点击落不到 widget——
+    // 表现为"只有线上的圆点或顶部 A|B 胶囊附近才拖得动"（v3.89 修复）
+    return [Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, this.node?.size?.[1] || MIN_HEIGHT)];
   }
 
   setSplitFromPos(pos) {
