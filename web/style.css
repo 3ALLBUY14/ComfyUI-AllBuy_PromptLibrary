@@ -2542,9 +2542,10 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   background: var(--vpl-bg-inset); border: 1px solid var(--vpl-border);
   border-radius: 5px; padding: 3px 6px;
 }
-/* 强度微调钮：紧凑版图标钮（基类 .vpl-icon-btn 24px，这里压到 17px） */
-.alora-slider .alora-nudge { width: 17px; height: 17px; color: var(--vpl-text-subtle); }
-.alora-slider .alora-nudge svg { width: 11px; height: 11px; }
+/* 强度微调钮：数值右侧上下箭头小柱（比左右两钮省 ~30px 行宽；基类 .vpl-icon-btn 24px） */
+.alora-nudge-col { flex: none; display: flex; flex-direction: column; }
+.alora-slider .alora-nudge { width: 15px; height: 11px; color: var(--vpl-text-subtle); }
+.alora-slider .alora-nudge svg { width: 9px; height: 9px; }
 .alora-slider .alora-nudge:hover { color: var(--vpl-text); background: var(--vpl-bg-hover); }
 .alora-slider .alora-nudge:disabled { opacity: .35; pointer-events: none; }
 

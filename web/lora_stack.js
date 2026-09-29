@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.83");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.84");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -619,29 +619,32 @@ function renderStack(node) {
     const val = document.createElement("span");
     val.className = "alora-val";
     val.textContent = formatWeight(entry.weight);
-    // 强度微调钮：±0.05 步进（滑块拖动难停在 0.05 档位上，按钮点得准）
+    // 强度微调钮：数值右侧上下箭头小柱，±0.05 步进（滑块拖动难停在 0.05 档位上，按钮点得准）
     const nudgeWeight = (d) => {
       entry.weight = clamp(roundedWeight(entry.weight + d), Number(entry.min), Number(entry.max));
       slider.value = String(entry.weight);
       val.textContent = formatWeight(entry.weight);
       writeStack(node);
     };
-    const minusBtn = makeIconBtn(
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12h14"/></svg>',
-      "强度 −0.05", () => nudgeWeight(-0.05), "alora-nudge",
-    );
-    const plusBtn = makeIconBtn(
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>',
+    const nudgeCol = document.createElement("div");
+    nudgeCol.className = "alora-nudge-col";
+    const nudgeUp = makeIconBtn(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m6 15 6-6 6 6"/></svg>',
       "强度 +0.05", () => nudgeWeight(0.05), "alora-nudge",
     );
-    minusBtn.disabled = plusBtn.disabled = !entry.enabled;
+    const nudgeDown = makeIconBtn(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m6 9 6 6 6-6"/></svg>',
+      "强度 −0.05", () => nudgeWeight(-0.05), "alora-nudge",
+    );
+    nudgeUp.disabled = nudgeDown.disabled = !entry.enabled;
+    nudgeCol.append(nudgeUp, nudgeDown);
     slider.addEventListener("input", () => {
       entry.weight = roundedWeight(slider.value);
       val.textContent = formatWeight(entry.weight);
       scheduleWriteStack(node);
     });
     slider.addEventListener("change", () => writeStack(node));
-    sliderWrap.append(slider, minusBtn, val, plusBtn);
+    sliderWrap.append(slider, val, nudgeCol);
     row.appendChild(sliderWrap);
 
     // ⚙ / 🗑
