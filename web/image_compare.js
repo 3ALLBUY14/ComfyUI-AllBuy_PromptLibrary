@@ -320,10 +320,11 @@ class ABCompareWidget {
   }
 
   computeSize(width) {
-    // 命中区必须覆盖节点实际高度：固定返回 MIN_HEIGHT 会让 LiteGraph 只把节点顶部
-    // 320px 条带当作 widget 可点区，节点拉高后图区下部的点击落不到 widget——
-    // 表现为"只有线上的圆点或顶部 A|B 胶囊附近才拖得动"（v3.89 修复）
-    return [Math.max(MIN_WIDTH, width), Math.max(MIN_HEIGHT, this.node?.size?.[1] || MIN_HEIGHT)];
+    // 此高度只用于 LiteGraph 的"布局条带"（widget 事件分发区 + 节点高度计算）。
+    // 千万不能跟随 node.size[1]：布局会在 widget 高度上再加标题栏等 chrome →
+    // 节点长高 → computeSize 返回更大值 → 再加 chrome……反馈环把节点撑到无限高
+    // （v3.89 事故）。条带之外的图区交互由节点级 onMouseDown/Move/Up 钩子兜底。
+    return [Math.max(MIN_WIDTH, width), MIN_HEIGHT];
   }
 
   setSplitFromPos(pos) {
@@ -607,15 +608,34 @@ app.registerExtension({
       // 撤销删除（Ctrl+Z）恢复节点：解除 dispose 标记并重装对比 widget
       if (this._abDisposed) { this._abDisposed = false; activate(this); }
     };
+    const onMouseDown = nodeType.prototype.onMouseDown;
+    nodeType.prototype.onMouseDown = function (e, pos) {
+      const r = onMouseDown?.apply(this, arguments);
+      if (r) return r;
+      // 命中分发与布局条带解耦：computeSize 条带（MIN_HEIGHT）之外的图区点击
+      // 也转交 widget——否则拉高节点后只有顶部条带拖得动分割线
+      const w = this._abWidget;
+      if (w?.mouse && Array.isArray(pos)) {
+        const rect = w.rect || w.imageRect;
+        if (rect && pos[0] >= rect[0] && pos[0] <= rect[0] + rect[2]
+          && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]) {
+          return w.mouse(e, pos);
+        }
+      }
+      return r;
+    };
     const onMouseMove = nodeType.prototype.onMouseMove;
     nodeType.prototype.onMouseMove = function (e, pos) {
       const r = onMouseMove?.apply(this, arguments);
       // 悬停跟随模式：鼠标在图区内移动时分割线自动跟随。widget.mouse 的 move
       // 事件仅在拖拽激活期可靠到达，纯悬停必须走节点级 onMouseMove
       try {
-        if (this._abHover && !this._abDragging) {
-          const w = this._abWidget;
-          const rect = w?.imageRect || w?.rect;
+        const w = this._abWidget;
+        if (this._abDragging && w) {
+          // 节点钩子发起的拖拽：move 事件不经 widget 分发，这里驱动
+          w.setSplitFromPos(pos);
+        } else if (this._abHover && w) {
+          const rect = w.imageRect || w.rect;
           if (rect?.[2] && pos[0] >= rect[0] && pos[0] <= rect[0] + rect[2]
             && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]) {
             const pct = clamp(((pos[0] - rect[0]) / rect[2]) * 100, 0, 100);
@@ -626,6 +646,13 @@ app.registerExtension({
           }
         }
       } catch (_) { /* 悬停跟随异常不得影响画布其它交互 */ }
+      return r;
+    };
+    const onMouseUp = nodeType.prototype.onMouseUp;
+    nodeType.prototype.onMouseUp = function (e, pos) {
+      const r = onMouseUp?.apply(this, arguments);
+      // 兜底清拖拽态（widget 分发路径的 up 由 LiteGraph 自行投递，重复调用无害）
+      if (this._abDragging && this._abWidget?.mouse) this._abWidget.mouse(e, pos || [0, 0]);
       return r;
     };
     const onRemoved = nodeType.prototype.onRemoved;
