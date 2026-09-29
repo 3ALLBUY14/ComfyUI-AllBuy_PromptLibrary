@@ -560,7 +560,9 @@ function installWidget(node) {
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
   node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
   node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
-  node.size[1] = Math.max(node.size[1] || MIN_HEIGHT, MIN_HEIGHT);
+  // v3.89 事故的持久化超大尺寸收治：反馈环撑出的高度已被存进工作流文件，
+  // 仅停止增长不够，装夹时须把异常高度一次拉回（正常手动拉高不受影响，上限内放行）
+  node.size[1] = Math.max(Math.min(node.size[1] || MIN_HEIGHT, 1024), MIN_HEIGHT);
 }
 
 function activate(node) {
