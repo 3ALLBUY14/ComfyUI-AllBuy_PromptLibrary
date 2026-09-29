@@ -10,14 +10,26 @@ const NODE_NAME = "AllBuyABCompare";
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 320;
 const EDGE_PAD = 10;
-const FOOTER_HEIGHT = 34;
+const FOOTER_HEIGHT = 64;
 const BADGE_H = 22;
 const BADGE_INSET = 8;
 const BRAND = "#6366f1";
+const SWITCH_W = 118;
+const SWITCH_H = 22;
 const EMPTY_IMAGE_SRC = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 function isTargetNode(node) {
   return (node?.constructor?.comfyClass || node?.comfyClass || node?.type) === NODE_NAME;
+}
+
+// 输入槽位中文标签（litegraph 官方定制点：label 优先于 name 显示）。
+// 不做 canvas 覆盖：原生槽位行永远画在前景层之后，任何钩子都盖不住它（v3.94 实测）
+function themeInputLabels(node) {
+  for (const inp of node.inputs || []) {
+    if (inp.type !== "IMAGE") continue;
+    if (inp.name === "image_a" && !inp._abLabeled) { inp.label = "图片 A"; inp._abLabeled = true; }
+    if (inp.name === "image_b" && !inp._abLabeled) { inp.label = "图片 B"; inp._abLabeled = true; }
+  }
 }
 
 function imageRefs(refs) {
@@ -316,7 +328,8 @@ class ABCompareWidget {
     this.rect = [0, 0, MIN_WIDTH, MIN_HEIGHT];
     this.imageRect = null;
     this.pageRect = null;
-    this.hoverBtnRect = null;
+    this.tglHoverRect = null;
+    this.tglAutoRect = null;
   }
 
   computeSize(width) {
@@ -343,10 +356,17 @@ class ABCompareWidget {
       return false;
     }
     if (type.includes("down") && event.button === 0 && pointInRect(pos, this.rect)) {
-      if (this.hoverBtnRect && pointInRect(pos, this.hoverBtnRect)) {
+      // 底栏主题开关：悬停跟随 / 自动输出（原生行已隐藏，值经 widget 同步序列化）
+      if (this.tglHoverRect && pointInRect(pos, this.tglHoverRect)) {
         node._abHover = !node._abHover;
         node.properties = node.properties || {};
         node.properties.ab_hover = node._abHover;
+        app.graph?.setDirtyCanvas?.(true, true);
+        return true;
+      }
+      if (this.tglAutoRect && pointInRect(pos, this.tglAutoRect)) {
+        const wAuto = (node.widgets || []).find((w) => w.name === "auto_output");
+        if (wAuto) wAuto.value = !wAuto.value;
         app.graph?.setDirtyCanvas?.(true, true);
         return true;
       }
@@ -492,29 +512,7 @@ class ABCompareWidget {
       ctx.fillText(flag, fx + fw / 2, fy + 10);
     }
 
-    // 悬停跟随开关（图区右上角胶囊）：开=鼠标在图内移动时分割线自动跟随，
-    // 无需按住拖拽（rgthree comparer 同款）；点击切换，随工作流持久化
-    const hoverOn = Boolean(node._abHover);
-    const hlabel = "悬停跟随 " + (hoverOn ? "开" : "关");
-    ctx.font = "600 11px sans-serif";
-    const hw2 = ctx.measureText(hlabel).width + 16;
-    const hx = base[0] + base[2] - hw2 - 8;
-    const hy = base[1] + 8;
-    this.hoverBtnRect = [hx, hy, hw2, 20];
-    ctx.fillStyle = hoverOn ? "rgba(99,102,241,0.88)" : "rgba(20,22,30,0.7)";
-    ctx.beginPath();
-    ctx.roundRect?.(hx, hy, hw2, 20, 999);
-    if (!ctx.roundRect) ctx.rect(hx, hy, hw2, 20);
-    ctx.fill();
-    ctx.strokeStyle = hoverOn ? "rgba(129,140,248,1)" : "rgba(255,255,255,0.16)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(hlabel, hx + hw2 / 2, hy + 10);
-
-    // 底部分隔 + 徽标
+    // 底部分隔 + 徽标行（上行）+ 主题开关行（下行）
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -522,6 +520,7 @@ class ABCompareWidget {
     ctx.lineTo(footerRect[0] + footerRect[2], footerRect[1] + 0.5);
     ctx.stroke();
 
+    const badgeRow = [footerRect[0], footerRect[1], footerRect[2], 26];
     const total = listLength(node);
     // 双侧批量数量不等时短侧复用末帧：徽标显示各自序号（* = 末帧复用），
     // 统一 N/total 会让用户误以为两同序号帧是配对产出的
@@ -536,16 +535,16 @@ class ABCompareWidget {
       : "";
     const pageW = pageLabel ? ctx.measureText(pageLabel).width + 16 : 0;
     const centerReserve = pageW ? pageW + 12 : 6;
-    const half = Math.max(1, (footerRect[2] - BADGE_INSET * 2 - centerReserve) / 2);
-    if (hasA) drawBadge(ctx, dimLabel(images.a, "A"), footerRect, "left");
-    if (hasB) drawBadge(ctx, dimLabel(images.b, "B"), footerRect, "right");
+    const half = Math.max(1, (badgeRow[2] - BADGE_INSET * 2 - centerReserve) / 2);
+    if (hasA) drawBadge(ctx, dimLabel(images.a, "A"), badgeRow, "left");
+    if (hasB) drawBadge(ctx, dimLabel(images.b, "B"), badgeRow, "right");
     // 单侧加载失败：徽标位给出失败提示（此前该侧无声消失，用户以为没接图）
-    if (!hasA && images.a?.error) drawBadge(ctx, "A 加载失败", footerRect, "left");
-    if (!hasB && images.b?.error) drawBadge(ctx, "B 加载失败", footerRect, "right");
+    if (!hasA && images.a?.error) drawBadge(ctx, "A 加载失败", badgeRow, "left");
+    if (!hasB && images.b?.error) drawBadge(ctx, "B 加载失败", badgeRow, "right");
     if (total > 1) {
       const bw = pageW;
-      const bx = footerRect[0] + (footerRect[2] - bw) / 2;
-      const by = footerRect[1] + (footerRect[3] - BADGE_H) / 2;
+      const bx = badgeRow[0] + (badgeRow[2] - bw) / 2;
+      const by = badgeRow[1] + (badgeRow[3] - BADGE_H) / 2;
       this.pageRect = [bx, by, bw, BADGE_H];
       ctx.fillStyle = "rgba(20,22,30,0.8)";
       ctx.beginPath();
@@ -560,6 +559,42 @@ class ABCompareWidget {
       ctx.fillText(pageLabel, bx + bw / 2, by + BADGE_H / 2);
     }
 
+    // 开关行：悬停跟随 / 自动输出（原生行已隐藏，值经 widget 同步序列化）
+    const drawSwitch = (x, y, on, label) => {
+      const r = [x, y, SWITCH_W, SWITCH_H];
+      ctx.fillStyle = on ? "rgba(99,102,241,0.22)" : "rgba(20,22,30,0.72)";
+      ctx.strokeStyle = on ? "rgba(129,140,248,0.95)" : "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect?.(x, y, r[2], r[3], 999);
+      if (!ctx.roundRect) ctx.rect(x, y, r[2], r[3]);
+      ctx.fill();
+      ctx.stroke();
+      // 轨道 + 滑块
+      const tx = x + 5;
+      const ty = y + (r[3] - 14) / 2;
+      ctx.fillStyle = on ? BRAND : "#3a3f52";
+      ctx.beginPath();
+      ctx.roundRect?.(tx, ty, 26, 14, 999);
+      if (!ctx.roundRect) ctx.rect(tx, ty, 26, 14);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(tx + (on ? 19 : 7), ty + 7, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = on ? "#e6e9ff" : "#aab1c4";
+      ctx.font = "600 11.5px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, tx + 32, y + r[3] / 2 + 0.5);
+      return r;
+    };
+    const cy = footerRect[1] + 30;
+    const autoOn = !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false));
+    const x0 = rect[0] + (rect[2] - (SWITCH_W * 2 + 10)) / 2;
+    this.tglHoverRect = drawSwitch(x0, cy, Boolean(node._abHover), "悬停跟随");
+    this.tglAutoRect = drawSwitch(x0 + SWITCH_W + 10, cy, autoOn, "自动输出");
+
     ctx.restore();
   }
 }
@@ -568,6 +603,17 @@ function installWidget(node) {
   if (node._abWidget || typeof node.addCustomWidget !== "function") return;
   node._abSplit = node._abSplit ?? 50;
   node._abHover = Boolean(node.properties?.ab_hover); // 悬停跟随模式（rgthree comparer 同款），随工作流持久化
+  // 主题化：隐藏原生 auto_output 行（值照常序列化，开关由画布底栏接管），体色对齐面板
+  const wAuto = (node.widgets || []).find((w) => w.name === "auto_output");
+  if (wAuto) {
+    wAuto.options = wAuto.options || {};
+    wAuto.options.hidden = true;
+    wAuto.hidden = true;
+    wAuto.computeSize = () => [0, -4];
+    wAuto.draw = () => {};
+  }
+  node.color = "#1d2030";
+  node.bgcolor = "#14161d";
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
   node.size = node.size || [MIN_WIDTH, MIN_HEIGHT];
   node.size[0] = Math.max(node.size[0] || MIN_WIDTH, MIN_WIDTH);
@@ -688,6 +734,12 @@ app.registerExtension({
         this.imgs = imgs;
         this.images = images;
       }
+    };
+    const onDrawForeground = nodeType.prototype.onDrawForeground;
+    nodeType.prototype.onDrawForeground = function (ctx) {
+      const r = onDrawForeground?.apply(this, arguments);
+      if (isTargetNode(this)) themeInputLabels(this);
+      return r;
     };
     const getExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
     nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
