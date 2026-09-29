@@ -351,6 +351,14 @@ class ABCompareWidget {
   }
 
   mouse(event, pos) {
+    // 坐标系归一化：LiteGraph 条带内分发时 pos 以 widget 顶为原点（y 已减布局 y），
+    // 节点级 onMouseDown 转发时 pos 以节点顶为原点——两套差一个布局偏移。
+    // 不归一则开关/翻页等按 y 的命中整体错位（v3.94"按不到"、v3.97 复发的真因）。
+    // 判据：widget 相对系下 y 必小于布局 y（条带内），节点局部系 y ≥ 布局 y。
+    if (Array.isArray(pos) && typeof this._lastY === "number"
+      && pos[1] < this._lastY - 1 && !this.node?._abMouseForwarding) {
+      pos = [pos[0], pos[1] + this._lastY];
+    }
     const type = String(event?.type || "");
     const isSecondary = type.includes("contextmenu") || event?.button === 2;
     if (isSecondary) {
@@ -358,7 +366,24 @@ class ABCompareWidget {
       return false;
     }
     if (type.includes("down") && event.button === 0 && pointInRect(pos, this.rect)) {
-      // 开关命中已移交 litegraph 原生 toggle 条带分发（本 widget 之后两行），此处只管翻页与拖拽
+      // 开关行（条带内顶部）：手动翻转原生 toggle 的 value（状态存储/序列化在 widget）。
+      // 注意本函数签名只有 (event,pos)，节点一律经 this.node 引用（裸 node 会抛
+      // ReferenceError 被上层吞掉——v3.97"开关按不到"的真因）
+      const node = this.node;
+      if (this.tglHoverRect && pointInRect(pos, this.tglHoverRect)) {
+        node._abHover = !node._abHover;
+        if (node._abHoverWidget) node._abHoverWidget.value = node._abHover;
+        node.properties = node.properties || {};
+        node.properties.ab_hover = node._abHover;
+        app.graph?.setDirtyCanvas?.(true, true);
+        return true;
+      }
+      if (this.tglAutoRect && pointInRect(pos, this.tglAutoRect)) {
+        const wAuto = node._abAutoWidget;
+        if (wAuto) wAuto.value = !(wAuto.value === true);
+        app.graph?.setDirtyCanvas?.(true, true);
+        return true;
+      }
       const total = listLength(this.node);
       if (total > 1 && this.pageRect && pointInRect(pos, this.pageRect)) {
         applyListIndex(this.node, ((Number(this.node._abListIndex) || 0) + 1) % total);
@@ -398,9 +423,9 @@ class ABCompareWidget {
   draw(ctx, node, width, y) {
     const fullWidth = node.size?.[0] || width;
     const fullHeight = node.size?.[1] || MIN_HEIGHT;
-    // 命中条带只有 computeSize 的 320，但绘制不受限：图区自适应拉伸到节点底
-    //（v3.95 曾固定条带高导致图区缩小+大片空白）。开关行走原生 toggle 条带
-    //（compare 之上两行），pill 画在其条带位置，画与命中同位
+    // 布局：顶部开关行（贴输入行）→ 图区（自适应到节点底）→ 底部徽标行。
+    // 命中条带只有 computeSize 的 320，绘制不受限；条带外点击由节点级 onMouseDown 转发
+    const SWITCH_ROW_H = 30;
     const rect = [
       EDGE_PAD,
       y + EDGE_PAD,
@@ -410,10 +435,54 @@ class ABCompareWidget {
     this.rect = rect;
     this.imageRect = null;
     this.pageRect = null;
+    this.tglAutoRect = null;
+    this.tglHoverRect = null;
+    this._lastY = y; // 供 mouse() 归一化两套坐标系（见 mouse 入口注释）
 
     ctx.save();
     ctx.fillStyle = "#101014";
     ctx.fillRect(rect[0], rect[1], rect[2], rect[3]);
+
+    // 开关行（贴输入行，单行两枚）：命中在本 widget 条带内顶部，点击翻转原生
+    // toggle 的 value（状态存储/序列化仍在原生 widget，外观这里接管）
+    const drawSwitch = (x, y2, on, label) => {
+      ctx.fillStyle = on ? "rgba(99,102,241,0.22)" : "rgba(20,22,30,0.72)";
+      ctx.strokeStyle = on ? "rgba(129,140,248,0.95)" : "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect?.(x, y2, SWITCH_W, SWITCH_H, 999);
+      if (!ctx.roundRect) ctx.rect(x, y2, SWITCH_W, SWITCH_H);
+      ctx.fill();
+      ctx.stroke();
+      const tx = x + 5;
+      const ty = y2 + (SWITCH_H - 14) / 2;
+      ctx.fillStyle = on ? BRAND : "#3a3f52";
+      ctx.beginPath();
+      ctx.roundRect?.(tx, ty, 26, 14, 999);
+      if (!ctx.roundRect) ctx.rect(tx, ty, 26, 14);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(tx + (on ? 19 : 7), ty + 7, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = on ? "#e6e9ff" : "#aab1c4";
+      ctx.font = "600 11.5px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, tx + 32, y2 + SWITCH_H / 2 + 0.5);
+    };
+    {
+      const totalW = SWITCH_W * 2 + 8;
+      const x0 = rect[0] + (rect[2] - totalW) / 2;
+      const sy = rect[1] + 4;
+      this.tglAutoRect = null; this.tglHoverRect = null;
+      const wAuto0 = (node.widgets || []).find((w) => w.name === "auto_output");
+      const autoOn = !(Boolean(wAuto0?.value === false));
+      this.tglAutoRect = [x0, sy, SWITCH_W, SWITCH_H];
+      drawSwitch(x0, sy, autoOn, "自动输出");
+      this.tglHoverRect = [x0 + SWITCH_W + 8, sy, SWITCH_W, SWITCH_H];
+      drawSwitch(x0 + SWITCH_W + 8, sy, Boolean(node._abHover), "悬停跟随");
+    }
 
     const images = node._abImages || {};
     const a = images.a?.img;
@@ -444,9 +513,10 @@ class ABCompareWidget {
       return;
     }
 
-    const imageAreaH = Math.max(1, rect[3] - FOOTER_HEIGHT);
-    const imageArea = [rect[0], rect[1], rect[2], imageAreaH];
-    const footerRect = [rect[0], rect[1] + imageAreaH, rect[2], FOOTER_HEIGHT];
+    // 图区从开关行之下开始（开关行贴输入行，单行 30px；SWITCH_ROW_H 已在开关行块声明）
+    const imageAreaH = Math.max(1, rect[3] - FOOTER_HEIGHT - SWITCH_ROW_H);
+    const imageArea = [rect[0], rect[1] + SWITCH_ROW_H, rect[2], imageAreaH];
+    const footerRect = [rect[0], rect[1] + SWITCH_ROW_H + imageAreaH, rect[2], FOOTER_HEIGHT];
     const base = fitRect(a || b, imageArea) || imageArea;
     this.imageRect = base;
     const splitX = base[0] + base[2] * splitPctOf(node) / 100;
@@ -552,38 +622,6 @@ class ABCompareWidget {
       ctx.fillText(pageLabel, bx + bw / 2, by + BADGE_H / 2);
     }
 
-    // 开关行主题外观：画在两只原生 toggle 的条带位置（本 widget 条带之上两行 28px，
-    // 顺序 自动输出 / 悬停跟随），命中由 litegraph 原生分发——画与命中必然同位
-    const drawSwitch = (x, y2, on, label) => {
-      ctx.fillStyle = on ? "rgba(99,102,241,0.22)" : "rgba(20,22,30,0.72)";
-      ctx.strokeStyle = on ? "rgba(129,140,248,0.95)" : "rgba(255,255,255,0.14)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect?.(x, y2, SWITCH_W, SWITCH_H, 999);
-      if (!ctx.roundRect) ctx.rect(x, y2, SWITCH_W, SWITCH_H);
-      ctx.fill();
-      ctx.stroke();
-      const tx = x + 5;
-      const ty = y2 + (SWITCH_H - 14) / 2;
-      ctx.fillStyle = on ? BRAND : "#3a3f52";
-      ctx.beginPath();
-      ctx.roundRect?.(tx, ty, 26, 14, 999);
-      if (!ctx.roundRect) ctx.rect(tx, ty, 26, 14);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(tx + (on ? 19 : 7), ty + 7, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = on ? "#e6e9ff" : "#aab1c4";
-      ctx.font = "600 11.5px sans-serif";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, tx + 32, y2 + SWITCH_H / 2 + 0.5);
-    };
-    const sx = rect[0] + (rect[2] - SWITCH_W) / 2;
-    drawSwitch(sx, y - 56 + 3, !(Boolean((node.widgets || []).find((w) => w.name === "auto_output")?.value === false)), "自动输出");
-    drawSwitch(sx, y - 28 + 3, Boolean(node._abHover), "悬停跟随");
-
     ctx.restore();
   }
 }
@@ -608,7 +646,9 @@ function installWidget(node) {
   if (wAuto0) {
     if (wAuto0.value !== true && wAuto0.value !== false) wAuto0.value = true; // 存档空值归一
     wAuto0.draw = () => {};
-    wAuto0.computeSize = () => [0, 28];
+    // 零高度隐藏：开关行由 compare.draw 画在其条带内顶部（贴输入行不占额外空间），
+    // 命中在 compare.mouse 里手动翻转 value——不再占用独立布局行（v3.96 有 56px 空隙）
+    wAuto0.computeSize = () => [0, -4];
     if (!wAuto0._abCbWrapped) {
       const prevCb = wAuto0.callback;
       wAuto0.callback = (v) => { app.graph?.setDirtyCanvas?.(true, true); prevCb?.(v); };
@@ -623,10 +663,9 @@ function installWidget(node) {
       app.graph?.setDirtyCanvas?.(true, true);
     }, { serialize: false });
     wHover.draw = () => {};
-    wHover.computeSize = () => [0, 28];
+    wHover.computeSize = () => [0, -4];
   }
-  // 统一排序 [auto, hover, compare]：开关行条带紧贴 compare 条带之上，
-  // 主题 pill 画在条带位置（画与命中同位）；图区随节点高度自适应拉伸
+  // 统一排序 [auto, hover, compare]：两开关零高度，compare 紧贴输入行
   const tidy = () => {
     const cmp = node._abWidget, au = wAuto0 || null, hv = wHover || null;
     if (!cmp) return;
@@ -645,9 +684,7 @@ function installWidget(node) {
   node._abHover = Boolean(node.properties?.ab_hover); // 悬停跟随模式（rgthree comparer 同款），随工作流持久化
   node.color = "#1d2030";
   node.bgcolor = "#14161d";
-  // 两只开关 = 隐藏绘制的原生 toggle widget：命中交给 litegraph 条带分发
-  //（100% 可靠），主题外观由 compare.draw 画在其条带位置。教训：canvas 底栏 +
-  // 事件转发不可靠——底部在 widget 命中条带之外、原型钩子不可依赖（v3.94 事故）
+  // 开关状态存储用原生 widget（序列化/取值可靠），外观与命中都在 compare 条带内
   node._abHoverWidget = wHover;
   node._abAutoWidget = wAuto0 || null;
   node._abWidget = node.addCustomWidget(new ABCompareWidget(node));
@@ -718,7 +755,8 @@ app.registerExtension({
         const rect = w.rect || w.imageRect;
         if (rect && pos[0] >= rect[0] && pos[0] <= rect[0] + rect[2]
           && pos[1] >= rect[1] && pos[1] <= rect[1] + rect[3]) {
-          return w.mouse(event, pos);
+          this._abMouseForwarding = true; // 转发路径 pos 已是节点局部，widget 内不做归一化
+          try { return w.mouse(event, pos); } finally { this._abMouseForwarding = false; }
         }
       }
       return r;
