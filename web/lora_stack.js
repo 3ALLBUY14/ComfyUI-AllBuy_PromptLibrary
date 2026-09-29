@@ -1051,6 +1051,60 @@ function showGroupManager(node) {
 
   const footer = document.createElement("div");
   footer.className = "vpl-dialog-footer";
+  // 导出：所见即所得（含弹窗内未保存改动）下载 JSON，备份/换机迁移
+  const exportBtn = makeBtn("导出", "下载当前分组数据为 JSON 文件（备份/迁移）", () => {
+    const payload = {
+      version: 1,
+      groups: groups.map((g) => ({ id: g.id, name: g.name, loras: [...(g.loras || [])] })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "allbuy_lora_groups.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+  // 导入：整组覆盖（confirm 二次确认）；解析后的数组交 saveGroups，服务端归一化兜底
+  // （非法条目丢弃、id 去重、补默认收藏组），失败不动任何数据
+  const importBtn = makeBtn("导入", "从 JSON 文件导入分组（覆盖当前全部分组）", () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.onchange = () => {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        let raw = null;
+        try {
+          const data = JSON.parse(reader.result);
+          raw = Array.isArray(data) ? data : (data && Array.isArray(data.groups) ? data.groups : null);
+        } catch (_) { /* raw 保持 null */ }
+        if (!raw) {
+          warn("导入失败：JSON 需为分组数组或含 groups 数组的对象");
+          return;
+        }
+        if (!window.confirm("导入将覆盖当前全部分组（现有 " + groups.length + " 组），继续？")) return;
+        try {
+          const saved = await saveGroups(raw);
+          const fresh = (saved.groups || []).map((g) => ({ ...g, loras: [...(g.loras || [])] }));
+          groups.length = 0;
+          groups.push(...fresh);
+          activeId = groups[0]?.id || null;
+          rowById.clear();
+          renderList();
+          renderMembers(groups[0] || null);
+          renderStack(node);
+          warn("已导入 " + fresh.length + " 个分组");
+        } catch (err) {
+          warn("导入保存失败（" + (err?.message || "网络异常") + "）：未改动现有分组");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  });
   const doneBtn = makeBtn("完成", "保存并关闭", async () => {
     try {
       await saveGroups(groups);
@@ -1062,7 +1116,7 @@ function showGroupManager(node) {
     overlay.remove();
     renderStack(node);
   }, "vpl-btn-primary");
-  footer.appendChild(doneBtn);
+  footer.append(exportBtn, importBtn, doneBtn);
   dialog.appendChild(footer);
 
   renderList();
