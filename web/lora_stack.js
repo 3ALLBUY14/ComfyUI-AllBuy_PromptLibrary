@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.85");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.86");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -180,6 +180,10 @@ function clearPendingStackWrite(node) {
   node._stackWriteTimer = null;
 }
 
+function flushStackWrite(node) {
+  if (node?._stackWriteTimer) writeStack(node); // writeStack 自会清挂起计时器
+}
+
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function roundedWeight(v) {
   const f = 10 ** WEIGHT_DIGITS;
@@ -318,6 +322,21 @@ function showLoraPicker(node, anchor, entry) {
         head.className = "alora-grp-head";
         head.textContent = (g.name === FAV_GROUP ? "★ " : "📁 ") + g.name;
         head.title = g.name;
+        // 整组加入：组内文件一次性全部追加为堆栈行（跳过已在堆栈/已失效的），不改动锚行
+        head.appendChild(makeIconBtn(
+          '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg>',
+          "整组加入堆栈", () => {
+            const existing = new Set((node._stackEntries || []).map((x) => x.name));
+            let added = 0;
+            for (const n of members) {
+              if (existing.has(n) || !allLoras.includes(n)) continue;
+              node._stackEntries.push({ ...defaultEntry(), name: n });
+              added++;
+            }
+            if (added) { writeStack(node); renderStack(node); }
+            close();
+          }, "alora-grp-addall",
+        ));
         list.appendChild(head);
         for (const name of members) {
           if (!allLoras.includes(name)) continue;
@@ -389,14 +408,17 @@ function showLoraPicker(node, anchor, entry) {
   };
 
   const close = () => {
-    document.removeEventListener("mousedown", onDocDown);
+    document.removeEventListener("mousedown", onDocDown, true);
     document.removeEventListener("keydown", onKey, true);
     pop.remove();
     node._aloraPickerClose = null;
     node._aloraPickerAnchor = null;
   };
   const onDocDown = (e) => {
-    if (!pop.contains(e.target)) close();
+    // 弹层内与锚钮自身不关：锚钮交给它 click 里的开合切换（捕获先关、click 又开会
+    // 表现为永远收不起——挂捕获必须配锚钮豁免）；弹层内点击由 pop.contains 放行
+    if (pop.contains(e.target) || anchor.contains(e.target)) return;
+    close();
   };
   const onKey = (e) => {
     if (e.key === "Escape") close();
@@ -405,9 +427,9 @@ function showLoraPicker(node, anchor, entry) {
   render();
   position();
   requestAnimationFrame(position);
-  // 关闭监听必须挂冒泡阶段：挂捕获会在"再点一次名称按钮"时先于按钮触发（先关旧弹层、
-  // click 又立刻开新的），表现为菜单永远收不起来；行内元素的 stopGraph 拦冒泡正好保护弹层内点击
-  document.addEventListener("mousedown", onDocDown);
+  // 关闭监听挂捕获阶段：v3.79 起 stopGraph(list) 会截停列表区域 mousedown 的冒泡，
+  // 挂冒泡则点列表空白/行非控件区时事件到不了 document，弹层关不掉（onDocDown 内豁免锚钮）
+  document.addEventListener("mousedown", onDocDown, true);
   document.addEventListener("keydown", onKey, true);
   node._aloraPickerClose = close;
   node._aloraPickerAnchor = anchor;
@@ -442,7 +464,7 @@ function makeIconBtn(html, title, onClick, cls = "") {
   b.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    onClick();
+    onClick(e);
   });
   return b;
 }
@@ -539,6 +561,7 @@ function renderStack(node) {
     const row = document.createElement("div");
     row.className = "alora-row" + (entry.enabled ? "" : " off");
     row.dataset.id = entry.id;
+    row.dataset.name = entry.name || "";
     const isFav = favGroup(cachedGroups.groups)?.loras?.includes(entry.name) || false;
 
     // 拖拽把手
@@ -619,9 +642,10 @@ function renderStack(node) {
     const val = document.createElement("span");
     val.className = "alora-val";
     val.textContent = formatWeight(entry.weight);
-    // 强度微调钮：数值右侧上下箭头小柱，±0.05 步进（滑块拖动难停在 0.05 档位上，按钮点得准）
-    const nudgeWeight = (d) => {
-      entry.weight = clamp(roundedWeight(entry.weight + d), Number(entry.min), Number(entry.max));
+    // 强度微调钮：数值右侧上下箭头小柱（滑块拖动难停在 0.05 档位上，按钮点得准；Alt 加速 ±1）
+    const nudgeWeight = (e, d) => {
+      const step = e?.altKey ? 1 : 0.05;
+      entry.weight = clamp(roundedWeight(entry.weight + (d < 0 ? -step : step)), Number(entry.min), Number(entry.max));
       slider.value = String(entry.weight);
       val.textContent = formatWeight(entry.weight);
       writeStack(node);
@@ -630,11 +654,11 @@ function renderStack(node) {
     nudgeCol.className = "alora-nudge-col";
     const nudgeUp = makeIconBtn(
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m6 15 6-6 6 6"/></svg>',
-      "强度 +0.05", () => nudgeWeight(0.05), "alora-nudge",
+      "强度 +0.05（Alt +1）", (e) => nudgeWeight(e, 0.05), "alora-nudge",
     );
     const nudgeDown = makeIconBtn(
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m6 9 6 6 6-6"/></svg>',
-      "强度 −0.05", () => nudgeWeight(-0.05), "alora-nudge",
+      "强度 −0.05（Alt −1）", (e) => nudgeWeight(e, -0.05), "alora-nudge",
     );
     nudgeUp.disabled = nudgeDown.disabled = !entry.enabled;
     nudgeCol.append(nudgeUp, nudgeDown);
@@ -752,7 +776,19 @@ function renderStack(node) {
     }
   }
   updateFooter(node);
+  if (node._stackFilterInput) {
+    node._stackFilterInput.style.display = entries.length >= 6 ? "" : "none";
+  }
+  applyRowFilter(node);
   recalcStackHeight(node);
+}
+
+function applyRowFilter(node) {
+  const q = node._stackFilter || "";
+  for (const row of node._stackList?.children || []) {
+    if (!row.classList.contains("alora-row")) continue;
+    row.style.display = !q || (row.dataset.name || "").toLowerCase().includes(q) ? "" : "none";
+  }
 }
 
 function updateFooter(node) {
@@ -760,8 +796,10 @@ function updateFooter(node) {
   const entries = node._stackEntries || [];
   const enabled = entries.filter((e) => e.enabled).length;
   node._stackFooterCount.textContent = `${enabled} 个 LoRA 已启用`;
+  // 口径与后端 _trigger_words 一致：滤未启用 / name=="None" / 权重≈0，复制结果才与节点输出对齐
   const words = entries
-    .filter((e) => e.enabled && e.trigger && e.trigger.trim())
+    .filter((e) => e.enabled && e.name && e.name !== "None"
+      && Math.abs(Number(e.weight) || 0) > 1e-6 && e.trigger && e.trigger.trim())
     .map((e) => e.trigger.trim());
   const dedupe = [];
   const seen = new Set();
@@ -801,6 +839,21 @@ function showGroupManager(node) {
   const groups = (cachedGroups.groups || []).map((g) => ({ ...g, loras: [...(g.loras || [])] }));
   let activeId = groups[0]?.id || null;
   const rowById = new Map(); // 分组卡片行：选中态/计数原地更新，不重建列表（防点击闪烁、保滚动位置）
+  const warn = (msg) => {
+    const bar0 = dialog.querySelector(".alora-grp-warn");
+    if (bar0) bar0.remove();
+    if (!msg) return;
+    const bar = document.createElement("div");
+    bar.className = "alora-grp-warn";
+    bar.textContent = msg;
+    dialog.insertBefore(bar, body);
+  };
+  // 统一保存：失败不再静默，顶部横幅提示；after 无论成败都执行（内存态照常生效）
+  const persist = (after) => {
+    saveGroups(groups)
+      .then(() => { warn(""); after(); })
+      .catch((err) => { warn("分组保存失败（" + (err?.message || "网络异常") + "）：改动暂只在本页生效"); after(); });
+  };
 
   const groupList = document.createElement("div");
   groupList.className = "vpl-list alora-grp-list";
@@ -898,11 +951,34 @@ function showGroupManager(node) {
           '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>',
           "重命名",
           () => {
-            const nn = window.prompt("新分组名", g.name);
-            if (nn && nn.trim()) {
-              g.name = nn.trim();
-              saveGroups(groups).then(() => { renderList(); renderMembers(g); });
-            }
+            // 行内编辑替代 window.prompt：原位换输入框，回车确认/Esc 取消
+            let done = false;
+            const commit = () => {
+              if (done) return;
+              done = true;
+              const nn = (input.value || "").trim();
+              if (nn && nn !== g.name) {
+                g.name = nn;
+                persist(() => { renderList(); renderMembers(g); });
+              } else {
+                renderList();
+              }
+            };
+            const input = document.createElement("input");
+            input.type = "text";
+            input.className = "vpl-input alora-grp-edit";
+            input.value = g.name;
+            stopGraph(input);
+            input.addEventListener("click", (e) => e.stopPropagation());
+            input.addEventListener("keydown", (e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commit();
+              else if (e.key === "Escape") { done = true; renderList(); }
+            });
+            input.addEventListener("blur", commit);
+            name.replaceWith(input);
+            input.focus();
+            input.select();
           },
         );
         const del = makeIconBtn(
@@ -912,7 +988,7 @@ function showGroupManager(node) {
             const idx = groups.findIndex((x) => x.id === g.id);
             if (idx >= 0) groups.splice(idx, 1);
             if (activeId === g.id) activeId = groups[0]?.id || null;
-            saveGroups(groups).then(() => {
+            persist(() => {
               renderList();
               renderMembers(groups.find((x) => x.id === activeId) || null);
             });
@@ -932,15 +1008,43 @@ function showGroupManager(node) {
       });
       groupList.appendChild(row);
     }
-    const addBtn = makeBtn("＋ 新建分组", "新建分组", async () => {
-      const nn = window.prompt("分组名", "");
-      if (nn && nn.trim()) {
-        groups.push({ id: uid(), name: nn.trim(), loras: [] });
+    const addBtn = makeBtn("＋ 新建分组", "新建分组", () => {
+      if (groupList.querySelector(".alora-grp-edit")) return; // 已有编辑器在输入
+      // 行内新建替代 window.prompt：列表顶插入输入行，回车确认/Esc 取消
+      let done = false;
+      const commit = () => {
+        if (done) return;
+        done = true;
+        const nn = (input.value || "").trim();
+        editor.remove();
+        if (!nn) return;
+        groups.push({ id: uid(), name: nn, loras: [] });
         activeId = groups[groups.length - 1].id;
-        await saveGroups(groups);
-        renderList();
-        renderMembers(groups.find((x) => x.id === activeId) || null);
-      }
+        persist(() => {
+          renderList();
+          renderMembers(groups.find((x) => x.id === activeId) || null);
+        });
+      };
+      const editor = document.createElement("div");
+      editor.className = "vpl-item alora-grp-new";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "vpl-input alora-grp-edit";
+      input.placeholder = "新分组名，回车确认";
+      stopGraph(input);
+      input.addEventListener("click", (e) => e.stopPropagation());
+      input.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") commit();
+        else if (e.key === "Escape") { done = true; editor.remove(); }
+      });
+      input.addEventListener("blur", () => {
+        if (input.value.trim()) commit();
+        else { done = true; editor.remove(); }
+      });
+      editor.appendChild(input);
+      groupList.insertBefore(editor, groupList.firstChild);
+      input.focus();
     }, "vpl-new-group");
     groupList.appendChild(addBtn);
   };
@@ -948,7 +1052,13 @@ function showGroupManager(node) {
   const footer = document.createElement("div");
   footer.className = "vpl-dialog-footer";
   const doneBtn = makeBtn("完成", "保存并关闭", async () => {
-    try { await saveGroups(groups); } catch (_) {}
+    try {
+      await saveGroups(groups);
+    } catch (err) {
+      // 保存失败不关弹窗：内存改动还在，网络/后端恢复后可重试，避免静默丢改动
+      warn("保存失败（" + (err?.message || "网络异常") + "）：弹窗未关闭，可重试");
+      return;
+    }
     overlay.remove();
     renderStack(node);
   }, "vpl-btn-primary");
@@ -1140,6 +1250,8 @@ async function attach(node) {
     listTitle.textContent = "LoRA 堆栈";
     const addBtn = makeBtn("＋ 添加 LoRA", "添加一条 LoRA", () => {
       node._stackEntries.push(defaultEntry());
+      node._stackFilter = ""; // 新行是 None：清筛选防"加完看不见"
+      if (node._stackFilterInput) node._stackFilterInput.value = "";
       writeStack(node);
       renderStack(node);
     }, "vpl-btn-primary alora-add");
@@ -1148,7 +1260,18 @@ async function attach(node) {
       writeStack(node);
       renderStack(node);
     });
-    listHead.append(listTitle, invertBtn, addBtn);
+    // 行筛选：行数 ≥6 才露出（renderStack 控制显隐），按名称/路径子串过滤行
+    const rowFilter = document.createElement("input");
+    rowFilter.type = "text";
+    rowFilter.className = "vpl-input alora-rowfilter";
+    rowFilter.placeholder = "筛选行…";
+    stopGraph(rowFilter);
+    rowFilter.addEventListener("input", () => {
+      node._stackFilter = rowFilter.value.trim().toLowerCase();
+      applyRowFilter(node);
+    });
+    node._stackFilterInput = rowFilter;
+    listHead.append(listTitle, rowFilter, invertBtn, addBtn);
     panel.appendChild(listHead);
 
     const list = document.createElement("div");
@@ -1309,6 +1432,10 @@ app.registerExtension({
         }
       }
     }, 500);
+    // 入队/关页前冲刷 stack_json 防抖：120ms 窗口内点排队或直接关页面不丢最后一次编辑
+    const flushAll = () => { for (const n of app?.graph?._nodes || []) flushStackWrite(n); };
+    app.addEventListener?.("queue", flushAll);
+    window.addEventListener("beforeunload", flushAll);
   },
   async nodeCreated(node) {
     if (node?.type !== NODE_NAME && node?.comfyClass !== NODE_NAME) return;
@@ -1330,6 +1457,7 @@ app.registerExtension({
       setTimeout(() => {
         hideAllWidgets(this);
         if (!this._aloraWidget && !this._aloraAttaching) attach(this);
+        clearPendingStackWrite(this); // 丢弃旧内存态的挂起写，防其随后覆盖刚载入的 stack_json
         this._stackEntries = readStack(this);
         renderStack(this);
         hideAllWidgets(this);

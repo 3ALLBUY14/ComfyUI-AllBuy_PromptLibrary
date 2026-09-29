@@ -2478,10 +2478,12 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   display: flex; align-items: center; gap: 6px; padding: 2px 0 0;
 }
 .alora-list-title { font-size: 12px; font-weight: 600; color: var(--vpl-text-muted); margin-right: auto; }
+/* 行筛选输入（≥6 行才显示，JS 控制）：紧凑单行 */
+.alora-rowfilter { flex: none; width: 110px; padding: 3px 8px; font-size: 12px; }
 .alora-add { flex: none; }
 .alora-list {
   display: flex; flex-direction: column; gap: 4px;
-  max-height: 320px; overflow-y: auto; padding: 4px;
+  max-height: 400px; overflow-y: auto; padding: 4px;
   border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md);
   background: var(--vpl-bg-panel);
 }
@@ -2591,6 +2593,11 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   color: var(--vpl-accent); padding: 8px 6px 3px; user-select: none;
 }
 .alora-grp-head::after { content: ""; flex: 1; height: 1px; background: var(--vpl-border); }
+/* 分组头右侧"整组加入"钮：压小避免抢视觉 */
+.alora-grp-head .vpl-icon-btn { width: 18px; height: 18px; flex: none; }
+/* 分组弹窗：保存失败横幅 + 行内编辑输入框（重命名/新建） */
+.alora-grp-warn { color: #f87171; font-size: 12.5px; padding: 4px 4px 0; }
+.alora-grp-list .vpl-input { flex: 1; min-width: 0; padding: 3px 8px; }
 /* 仅限定树/分组行：外层节点容器也复用 .alora-node 名（vpl-node alora-node），
    若命中这行 align-items:center 会压掉纵向 flex 的默认 stretch，面板收缩为 fit-content 居中 */
 .alora-node.alora-dir,

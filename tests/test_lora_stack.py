@@ -171,7 +171,9 @@ class LoraFileSignatureTests(unittest.TestCase):
                 lora._folder_paths = orig
             self.assertEqual(len(sigs), 2)
             by_name = dict(sigs)
-            self.assertIn(":1", by_name["real.safetensors"])  # <mtime_ns>:<size=1>
+            # 钉住签名格式 "<mtime_ns>:<size>"：assertIn(":1") 钉不住字段转置（size 前置同样含 ":1"）
+            import re as _re
+            self.assertRegex(by_name["real.safetensors"], _re.compile(r"^\d+:\d+$"))
             self.assertEqual(by_name["ghost.safetensors"], "missing")
 
 
@@ -192,6 +194,28 @@ class ISChangedTests(unittest.TestCase):
         self.assertNotEqual(c, d)
         e = self._changed(stack_json=json.dumps([{"name": "a", "weight": 0.6, "trigger": "x"}]))
         self.assertNotEqual(d, e)
+
+    def test_real_file_change_flips_key(self):
+        # 真实文件参与 IS_CHANGED：文件 size/mtime 变化必须换键。
+        # 删掉 IS_CHANGED 里 _lora_files_signature 那行哈希更新，此测试必红（此前全绿是空转）
+        with tempfile.TemporaryDirectory() as td:
+            real = os.path.join(td, "live.safetensors")
+            with open(real, "w") as f:
+                f.write("x")
+            class FakeFolder:
+                def get_full_path(self, key, name):
+                    return real if name == "live.safetensors" else None
+            stack = json.dumps([{"name": "live.safetensors", "weight": 0.7}])
+            orig = lora._folder_paths
+            lora._folder_paths = lambda: FakeFolder()
+            try:
+                before = self._changed(stack_json=stack)
+                with open(real, "w") as f:
+                    f.write("xy")  # size+mtime 双变，签名必变
+                after = self._changed(stack_json=stack)
+            finally:
+                lora._folder_paths = orig
+            self.assertNotEqual(before, after)
 
     def test_zero_weight_trigger_intentionally_stable(self):
         # 权重 0 的条目不参与文件签名，且有效签名中权重≈0 分支不含 trigger

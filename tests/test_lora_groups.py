@@ -116,5 +116,26 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(loaded["groups"][0]["loras"], [])
 
 
+class LibraryBackupWriteTests(unittest.TestCase):
+    def test_second_save_backs_up_first(self):
+        # backup 写侧此前零覆盖：第二次保存必须把第一版内容落进 .backup、新内容进主文件
+        with tempfile.TemporaryDirectory() as td:
+            orig = library_store.get_user_libraries_folder
+            library_store.get_user_libraries_folder = lambda: td
+            try:
+                library_store.save_library("user:bk", {"name": "bk", "groups": [{"name": "a"}]})
+                path = library_store.resolve("user:bk")[0]
+                self.assertTrue(os.path.isfile(path))
+                self.assertFalse(os.path.isfile(path + ".backup"))  # 首存无旧版可备份
+                library_store.save_library("user:bk", {"name": "bk", "groups": [{"name": "b"}]})
+                self.assertTrue(os.path.isfile(path + ".backup"))
+                with open(path + ".backup", encoding="utf-8") as f:
+                    self.assertIn('"a"', f.read())
+                with open(path, encoding="utf-8") as f:
+                    self.assertIn('"b"', f.read())
+            finally:
+                library_store.get_user_libraries_folder = orig
+
+
 if __name__ == "__main__":
     unittest.main()
