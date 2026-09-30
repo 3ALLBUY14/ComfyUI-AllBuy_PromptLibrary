@@ -2568,7 +2568,7 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .atb-tbar .vpl-btn { flex: none; }
 .atb-area {
   width: 100%; box-sizing: border-box; resize: vertical;
-  min-height: 200px; max-height: 640px;
+  min-height: 360px; max-height: 640px;
   line-height: 1.55; font-size: 13px;
   font-family: var(--vpl-mono, ui-monospace, Consolas, monospace);
   /* 内容随框宽软换行（保留手动换行，长行不再横向滚动） */
