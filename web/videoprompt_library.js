@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.109"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.110"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -1004,6 +1004,11 @@ function startController(node) {
     // ResizeObserver / computeSize 仍会调到本函数；此时测量值无意义，
     // 返回上次可见时的缓存高度，防止节点高度被错误改写（拉远再拉回后尺寸不准的根因）
     if (!container.isConnected || container.getBoundingClientRect().height === 0) return _lastGoodH;
+    // 填充类会放宽内部滚动区上限（vpl-list/vpl-rd-grid max-height:none），带着它量
+    // 自然高会把内容高量成天文数字 → computeSize 把节点无限撑大 ↔ 填充收回复位
+    // 来回打架 = 底部抽搐；测量必须始终在上限生效的口径下进行
+    const hadFill = container.classList.contains("vpl-fill");
+    if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
     container.style.height = "auto";
@@ -1012,6 +1017,7 @@ function startController(node) {
     const h = container.scrollHeight;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
+    if (hadFill) container.classList.add("vpl-fill");
     if (h > 0) _lastGoodH = h;
     return h > 0 ? h : 460;
   }
@@ -2948,6 +2954,11 @@ function startRandomController(node) {
     // 远缩放/节点离屏时前端会 display:none 隐藏 DOM 面板（容器高度归 0），
     // 此时测量值无意义：返回上次可见时的缓存高度，防止节点高度被错误改写
     if (!container.isConnected || container.getBoundingClientRect().height === 0) return _lastGoodH;
+    // 填充类会放宽 vpl-rd-grid 的 220 上限，带着它量自然高会把内容高量成天文数字
+    // → computeSize 把节点无限撑大 ↔ 填充收回复位来回打架 = 底部抽搐；
+    // 测量必须始终在上限生效的口径下进行
+    const hadFill = container.classList.contains("vpl-fill");
+    if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
     container.style.height = "auto";
@@ -2956,6 +2967,7 @@ function startRandomController(node) {
     const hh = container.scrollHeight;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
+    if (hadFill) container.classList.add("vpl-fill");
     if (hh > 0) _lastGoodH = hh;
     return hh > 0 ? hh : 460;
   }
