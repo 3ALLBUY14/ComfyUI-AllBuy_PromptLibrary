@@ -2490,6 +2490,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-md);
   background: var(--vpl-bg-panel);
 }
+/* 填充模式（节点被拉高）：列表吃掉面板多余高度，解除 400px 上限由面板滚动 */
+.alora-panel.vpl-fill { overflow-y: auto; overflow-x: hidden; }
+.alora-panel.vpl-fill .alora-list { flex: 1 1 auto; min-height: 160px; max-height: none; }
 .alora-row {
   position: relative; display: grid;
   grid-template-columns: 14px 26px 22px minmax(90px, 1fr) 118px 52px;
@@ -2746,3 +2749,13 @@ body > .bips-lightbox-ghost { z-index: 10000; }
    画布 custom widget 全部在 canvas 绘制，无 DOM 样式需求；
    预留作用域供后续（如辅助浮层）扩展。
    ===================================================================== */
+
+/* ==========================================================================
+   填充模式（v3.109，panel_guard vpl-fill 类）：节点被拉高时面板跟满节点，
+   内部主滚动区解除自身上限吃掉多余高度；回到内容高时类被摘除恢复自然布局
+   ========================================================================== */
+.bips-node.vpl-fill .bips-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.bips-node.vpl-fill .bips-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.media-node.vpl-fill .media-panel { flex: 1 1 auto; min-height: 0; }
+.vpl-node.vpl-fill .vpl-list { flex: 1 1 auto; max-height: none; }
+.vpl-node.vpl-fill .vpl-rd-grid { flex: 1 1 auto; min-height: 120px; max-height: none; }

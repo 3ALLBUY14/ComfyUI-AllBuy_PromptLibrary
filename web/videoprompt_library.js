@@ -3,9 +3,9 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
-import { installBypassSync, installExecutionLock } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.108"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.109"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -1055,6 +1055,14 @@ function startController(node) {
   // 监听容器尺寸变化（v3.47：同时驱动迷你模式进出判定）
   const ro = new ResizeObserver(() => { updateMiniMode(); recalcHeight(); });
   ro.observe(container);
+  // 拖高节点 → 面板跟满（共享助手：拉高填充/拖矮钳回内容下限）
+  installFillResize(node, {
+    el: () => container,
+    chrome: chromeH,
+    floor: () => _cachedTotalH,
+    minWidth: NODE_WIDTH,
+    margin: 8,
+  });
   updateMiniMode();
 
   // -------------------------------------------------------------------------
@@ -1820,6 +1828,7 @@ function startController(node) {
   //   v3.53：高度公式与 node.computeSize 对齐 = contentH + chromeH(实际 domWidget.y) +
   //     BOTTOM_GAP(18px 节点色底缝)——旧的写死 +50 正是“提示词库/随机抽卡底缝没变宽”的原因
   let _recalcPending = false;
+  let _cachedTotalH = 0; // 填充模式下限：节点总高 = 内容 + chrome + 底缝（recalcHeight 维护）
   function recalcHeight() {
     if (_recalcPending) return;
     _recalcPending = true;
@@ -1827,11 +1836,19 @@ function startController(node) {
       _recalcPending = false;
       const h = realContentH();
       if (h <= 0) return;
+      _cachedTotalH = h + chromeH() + BOTTOM_GAP;
       // v3.25 修复「节点拉大后拉不回」：宽度沿用用户当前 node.size[0]（不记忆放大），
       // 保底 NODE_WIDTH 由 node.computeSize 负责；不再每帧用 Math.max 重设宽度，
       // 避免 ResizeObserver 反馈与 resize 手柄竞争导致缩小拖拽失效。
       const w = node.size[0] && node.size[0] > 0 ? node.size[0] : NODE_WIDTH;
-      node.setSize([w, h + chromeH() + BOTTOM_GAP]);
+      if ((node.size[1] || 0) > _cachedTotalH + 1) {
+        // 节点比内容高（用户拉高/工作流存了更大尺寸）：容器填满节点，不缩回
+        applyFillPanel(node, container, chromeH(), 8);
+      } else {
+        container.classList.remove("vpl-fill");
+        container.style.height = ""; // 自动模式回自然布局（清掉可能的填充残留）
+        node.setSize([w, _cachedTotalH]);
+      }
       if (typeof node.setDirtyCanvas === "function") node.setDirtyCanvas(true, true);
     });
   }
@@ -2952,6 +2969,7 @@ function startRandomController(node) {
   } catch (e) { /* 旧版前端可能不可写 */ }
 
   let _recalcPending = false;
+  let _rdCachedH = 0; // 填充模式下限：节点总高 = 内容 + chrome + 底缝（recalcHeight 维护）
   function recalcHeight() {
     if (_recalcPending) return;
     _recalcPending = true;
@@ -2959,9 +2977,17 @@ function startRandomController(node) {
       _recalcPending = false;
       const hh = realContentH();
       if (hh <= 0) return;
+      _rdCachedH = hh + chromeH() + BOTTOM_GAP;
       const w = node.size[0] && node.size[0] > 0 ? node.size[0] : NODE_WIDTH;
-      // v3.53：与 computeSize 对齐（chromeH 实测 + BOTTOM_GAP 底缝），旧 +50 导致底缝没变宽
-      node.setSize([w, hh + chromeH() + BOTTOM_GAP]);
+      if ((node.size[1] || 0) > _rdCachedH + 1) {
+        // 节点比内容高（用户拉高/工作流存了更大尺寸）：容器填满节点，不缩回
+        applyFillPanel(node, container, chromeH(), 8);
+      } else {
+        container.classList.remove("vpl-fill");
+        container.style.height = ""; // 自动模式回自然布局（清掉可能的填充残留）
+        // v3.53：与 computeSize 对齐（chromeH 实测 + BOTTOM_GAP 底缝），旧 +50 导致底缝没变宽
+        node.setSize([w, _rdCachedH]);
+      }
       if (typeof node.setDirtyCanvas === "function") node.setDirtyCanvas(true, true);
     });
   }
@@ -2978,6 +3004,14 @@ function startRandomController(node) {
 
   const ro = new ResizeObserver(() => recalcHeight());
   ro.observe(container);
+  // 拖高节点 → 面板跟满（共享助手：拉高填充/拖矮钳回内容下限）
+  installFillResize(node, {
+    el: () => container,
+    chrome: chromeH,
+    floor: () => _rdCachedH,
+    minWidth: NODE_WIDTH,
+    margin: 8,
+  });
   // v3.46：状态行过窄时隐藏「预览」文字只留图标（RO 只切换 class，不改尺寸，无反馈回路）
   const roStatus = new ResizeObserver(() => {
     statusRow.classList.toggle("vpl-rd-narrow", statusRow.clientWidth < 250);

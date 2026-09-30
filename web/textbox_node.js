@@ -4,7 +4,7 @@
 //   快速对接提示词库（/libraries + /library + /library/save），@素材名 实时统计
 //   提示（→ image1..10）。样式沿用 .vpl-* 统一体系。
 import { app } from "../../scripts/app.js";
-import { installBypassSync, installExecutionLock } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyTextBox";
 const API = "/allbuy_promptlibrary";
@@ -31,18 +31,6 @@ function stackChromeH(node) {
   return Math.min(y, STACK_MAX_CHROME);
 }
 
-function fillPanel(node, panel, chrome) {
-  // 填充模式：面板高度跟满节点，多余空间由文本区（flex:1）吃掉。实测几何链：
-  // 容器顶 = widget.y + 10（前端锚点偏移），容器有上下 padding（.vpl-node 基类
-  // 12+10，活量不硬编码），面板底再留 8px 视觉边距 → 面板高 = 节点高 - 全部开销。
-  // 面板自身 border-box，声明高即渲染外沿高。
-  const host = panel.parentElement;
-  const cs = host ? getComputedStyle(host) : null;
-  const padV = cs ? (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) : 0;
-  const h = Math.max(0, Math.round((node.size?.[1] || 0) - chrome - STACK_BOTTOM_GAP - padV));
-  panel.style.height = h + "px";
-}
-
 function recalcHeight(node) {
   if (!node || typeof node.setSize !== "function" || node._atbHeightPending) return;
   node._atbHeightPending = true;
@@ -50,6 +38,7 @@ function recalcHeight(node) {
     node._atbHeightPending = false;
     const panel = node?._atbContainer;
     if (!panel?.isConnected) return;
+    if (panel.getBoundingClientRect().height === 0) return; // 远缩放/离屏剔除：测量无意义，沿用缓存（bips/media 同款守卫）
     const chrome = stackChromeH(node);
     panel.style.height = ""; // 先回自然高度量内容下限（填充模式下也要量）
     const host = panel.parentElement || panel;
@@ -58,7 +47,7 @@ function recalcHeight(node) {
     node._atbCachedH = h;
     if ((node.size?.[1] || 0) > h + 1) {
       // 节点比内容高（用户拉高或工作流存了更大尺寸）：面板填满节点，不缩回去
-      fillPanel(node, panel, chrome);
+      applyFillPanel(node, panel, chrome, STACK_BOTTOM_GAP);
       app.graph?.setDirtyCanvas?.(true, true);
       return;
     }
@@ -434,18 +423,14 @@ function attach(node) {
   const ro = new ResizeObserver(() => recalcHeight(node));
   ro.observe(container);
   // 用户拖拽节点大小（setSize 每次移动都会回调 onResize）与工作流载入的大尺寸
-  // 都走这里：拉高→面板跟满；拖矮→先钳到内容下限；随后一律重新填充，
-  // 保证钳回/缩小时面板同步缩回（否则残留上一次的大高度冲出节点底）
-  const _origOnResize = node.onResize;
-  node.onResize = function () {
-    _origOnResize?.apply(this, arguments);
-    const panel = this._atbContainer;
-    if (!panel?.isConnected || !this._atbCachedH) return;
-    if ((this.size?.[1] || 0) < this._atbCachedH) {
-      this.setSize([this.size?.[0] || STACK_MIN_WIDTH, this._atbCachedH]);
-    }
-    fillPanel(this, panel, stackChromeH(this));
-  };
+  // 都走这里：拉高→面板跟满；拖矮→钳到内容下限（共享助手 panel_guard.installFillResize）
+  installFillResize(node, {
+    el: () => node._atbContainer,
+    chrome: () => stackChromeH(node),
+    floor: () => node._atbCachedH || 0,
+    minWidth: STACK_MIN_WIDTH,
+    margin: STACK_BOTTOM_GAP,
+  });
   const _origOnRemoved = node.onRemoved;
   node.onRemoved = function () {
     _origOnRemoved?.apply(this, arguments);

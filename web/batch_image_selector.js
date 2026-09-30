@@ -1,6 +1,6 @@
 // 批量选图节点前端：图↔提示词双向映射 GUI
 import { app } from "../../scripts/app.js";
-import { installBypassSync, installExecutionLock } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, clearFillPanel, installFillResize } from "./panel_guard.js";
 
 const API = "/allbuy_promptlibrary";
 const NODE_NAME = "BatchImagePromptSelector";
@@ -281,6 +281,14 @@ function startController(node) {
   [0, 200, 800, 1600, 3000].forEach((t) => setTimeout(pruneStrayWidgets, t));
   const ro = new ResizeObserver(() => { recalcHeight(); syncMasonryCols(); });
   ro.observe(container);
+  // 拖高节点 → 面板跟满（共享助手：拉高填充/拖矮钳回内容下限）
+  installFillResize(node, {
+    el: () => container,
+    chrome: widgetChromeH,
+    floor: () => _cachedTotalH,
+    minWidth: NODE_WIDTH,
+    margin: 8,
+  });
   // 节点删除时回收 RO：其持有 container 强引用，不摘会钉住整个面板闭包
   const _origOnRemovedBips = node.onRemoved;
   node.onRemoved = function () { _origOnRemovedBips?.apply(this, arguments); ro.disconnect(); };
@@ -310,7 +318,14 @@ function startController(node) {
       if (contentH <= 0) return;
       _cachedTotalH = Math.max(MIN_TOTAL_H, contentH + widgetChromeH() + BOTTOM_PAD);
       const w = node.size[0] && node.size[0] > 0 ? node.size[0] : NODE_WIDTH;
-      node.setSize([w, _cachedTotalH]);
+      if ((node.size[1] || 0) > _cachedTotalH + 1) {
+        // 节点比内容高（用户拉高/工作流存了更大尺寸）：容器填满节点，不缩回
+        applyFillPanel(node, container, widgetChromeH(), 8);
+      } else {
+        container.classList.remove("vpl-fill");
+        container.style.height = ""; // 自动模式回自然布局（清掉可能的填充残留）
+        node.setSize([w, _cachedTotalH]);
+      }
       if (typeof node.setDirtyCanvas === "function") node.setDirtyCanvas(true, true);
       if (app.canvas && typeof app.canvas.setDirty === "function") app.canvas.setDirty(true);
     });

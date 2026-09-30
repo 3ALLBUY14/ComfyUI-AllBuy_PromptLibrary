@@ -8,7 +8,7 @@
 //   顶部槽位带：onDrawBackground 画 图片/视频/音频 三联预览卡，消除 8 输出口的留白区；
 //         预览卡底板与卡片都在右侧接口标签保留区（HERO_PORT_ZONE）前停住，绝不进入。
 import { app } from "../../scripts/app.js";
-import { installBypassSync, installExecutionLock } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, clearFillPanel, installFillResize } from "./panel_guard.js";
 
 const API = "/allbuy_promptlibrary";
 const NODE_NAME = "MediaAssetLoader";
@@ -1571,7 +1571,16 @@ function startMediaPanel(node, container, wManifest) {
       _cachedTotalH = Math.max(MIN_TOTAL_H, contentH + widgetChromeH() + BOTTOM_PAD);
       node._mediaTargetH = _cachedTotalH; // guard 对齐循环用：任何来源改大节点高度都会被掰回
       const w = node.size[0] && node.size[0] > 0 ? node.size[0] : NODE_WIDTH;
-      node.setSize([w, _cachedTotalH]);
+      if ((node.size[1] || 0) > _cachedTotalH + 1) {
+        // 节点比内容高（用户拉高/工作流存了更大尺寸）：容器填满节点不缩回，
+        // vpl-fill 类把素材卡撑开、footer 压底（CSS .media-node.vpl-fill）
+        node._mediaTargetH = node.size[1];
+        applyFillPanel(node, container, widgetChromeH(), 8);
+      } else {
+        container.classList.remove("vpl-fill");
+        container.style.height = ""; // 自动模式回自然布局（清掉可能的填充残留）
+        node.setSize([w, _cachedTotalH]);
+      }
       updateGridFade();
       if (typeof node.setDirtyCanvas === "function") node.setDirtyCanvas(true, true);
       if (app.canvas && typeof app.canvas.setDirty === "function") app.canvas.setDirty(true);
@@ -1879,6 +1888,14 @@ function startMediaPanel(node, container, wManifest) {
   [60, 250, 600].forEach((t) => setTimeout(recalcHeight, t));
   const ro = new ResizeObserver(() => recalcHeight());
   ro.observe(container);
+  // 拖高节点 → 面板跟满（共享助手：拉高填充/拖矮钳回内容下限）
+  installFillResize(node, {
+    el: () => container,
+    chrome: widgetChromeH,
+    floor: () => _cachedTotalH,
+    minWidth: NODE_WIDTH,
+    margin: 8,
+  });
 
   console.log(`%c[MediaAsset ${MEDIA_VERSION}] 面板已挂载`, "color:#27ae60");
 }

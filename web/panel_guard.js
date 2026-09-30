@@ -86,3 +86,46 @@ export function installExecutionLock(node, container) {
     unlock();
   });
 }
+
+// ---------------------------------------------------------------------------
+// 填充式高度（v3.109）：拖高节点 → 面板跟满；拖矮 → 钳到内容下限。
+// 文本框/LoRA堆栈/批量选图/素材加载/主库/随机抽卡共用。几何链实测（前端 1.53.6）：
+//   DOM 锚点顶 = domWidget.y + 10；目标元素顶 = 锚点顶 + 其 offsetTop
+//   （offsetParent 是锚点或容器顶时成立，offsetTop 不受画布缩放 transform 影响）；
+//   margin 取各节点自动模式既有的底缝（面板卡 18 / 容器 8），填充与自动外观一致。
+// ---------------------------------------------------------------------------
+
+// 把 el 填到节点当前高度（vpl-fill 类供 CSS 放宽内部滚动区上限）
+export function applyFillPanel(node, el, chromeY, margin) {
+  if (!el?.isConnected || el.getBoundingClientRect().height === 0) return; // 远缩放/离屏被剔除时不动
+  const top = (chromeY || 0) + 10 + (el.offsetTop || 0);
+  el.style.height = Math.max(0, Math.round((node.size?.[1] || 0) - top - (margin ?? 18))) + "px";
+  el.classList.add("vpl-fill");
+}
+
+export function clearFillPanel(el) {
+  if (!el) return;
+  el.style.height = "";
+  el.classList.remove("vpl-fill");
+}
+
+// onResize 钩子：新前端 setSize 每次都回调它，工作流载入的大尺寸也走这里。
+// 拖矮到内容下限以下先钳回（钳回触发的内层 onResize 也会走到填充分支），再按需填充。
+export function installFillResize(node, opts) {
+  const orig = node.onResize;
+  node.onResize = function () {
+    orig?.apply(this, arguments);
+    const el = opts.el();
+    if (!el?.isConnected || el.getBoundingClientRect().height === 0) return; // 远缩放/离屏被剔除时不动
+    const floor = opts.floor ? opts.floor() : 0;
+    if (floor && (this.size?.[1] || 0) < floor) {
+      this.setSize([this.size?.[0] || opts.minWidth || this.size?.[0], floor]);
+    }
+    const h = this.size?.[1] || 0;
+    if (floor && h > floor + 1) {
+      applyFillPanel(this, el, opts.chrome(), opts.margin ?? 18);
+    } else if (el.classList.contains("vpl-fill")) {
+      clearFillPanel(el);
+    }
+  };
+}

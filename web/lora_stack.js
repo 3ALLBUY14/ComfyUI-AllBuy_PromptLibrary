@@ -14,7 +14,7 @@
 //   只有第一个调用真正执行挂载，其余直接 return。
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { installBypassSync, installExecutionLock } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
@@ -1184,6 +1184,7 @@ function recalcStackHeight(node) {
     // padding 也灌进面板，面板比内容高 22px，恰好顶穿 18px 底缝（用户报的"底部撑出边界"）
     const prevH = panel.style.height;
     panel.style.height = "auto";
+    panel.classList.remove("vpl-fill"); // 填充类会放宽列表上限，带着它量自然高会把节点撑爆
     // 开着的下拉浮层是绝对定位、会计入 scrollHeight，测量前先临时藏掉（同步完成，不产生可见闪烁）
     const pops = panel.querySelectorAll(".vpl-dd-panel");
     const savedDisplay = [];
@@ -1195,6 +1196,14 @@ function recalcStackHeight(node) {
     if (contentH <= 0) return;
     node._aloraCachedH = Math.max(STACK_MIN_TOTAL_H, contentH + stackChromeH(node) + STACK_BOTTOM_GAP);
     const width = node.size?.[0] > 0 ? node.size[0] : STACK_MIN_WIDTH;
+    if ((node.size?.[1] || 0) > node._aloraCachedH + 1) {
+      // 节点比内容高（用户拉高/工作流存了更大尺寸）：面板填满节点不缩回，
+      // vpl-fill 类放宽列表 400px 上限由面板滚动（CSS .alora-panel.vpl-fill）
+      applyFillPanel(node, panel, stackChromeH(node), STACK_BOTTOM_GAP);
+      node.graph?.setDirtyCanvas?.(true, true);
+      return;
+    }
+    panel.classList.remove("vpl-fill");
     if (node.size?.[1] === node._aloraCachedH) return;
     node.setSize([width, node._aloraCachedH]);
     node.graph?.setDirtyCanvas?.(true, true);
@@ -1516,6 +1525,14 @@ async function attach(node) {
     const ro = new ResizeObserver(() => recalcStackHeight(node));
     ro.observe(container);
     node._aloraRO = ro; // onRemoved 时 disconnect，observe 滞留会钉住容器 DOM
+    // 拖高节点 → 面板跟满（共享助手：拉高填充/拖矮钳回内容下限）
+    installFillResize(node, {
+      el: () => node._stackContainer,
+      chrome: () => stackChromeH(node),
+      floor: () => node._aloraCachedH || 0,
+      minWidth: STACK_MIN_WIDTH,
+      margin: STACK_BOTTOM_GAP,
+    });
     node._aloraDropdowns = dropdowns;
     // 离屏/后台页挂载时 widget.y 未就绪，chrome 只能固化兜底值 96；首次被画布绘制后
     // y 落定 → 在此触发重算修正（对齐 media_asset_loader 的绘制钩子写法）
