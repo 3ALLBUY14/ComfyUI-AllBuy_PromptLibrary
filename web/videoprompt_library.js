@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.120"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.121"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -1000,26 +1000,31 @@ function startController(node) {
   //   - 强制 reflow 后读 scrollHeight（这时 scrollHeight = offsetHeight = 内容真实高度）
   //   - 恢复原 inline style
   let _lastGoodH = 460;
-  function realContentH() {
+  function realContentH(uncapped) {
     // 远缩放/节点离屏时前端会 display:none 隐藏 DOM 面板（容器高度归 0），
     // ResizeObserver / computeSize 仍会调到本函数；此时测量值无意义，
     // 返回上次可见时的缓存高度，防止节点高度被错误改写（拉远再拉回后尺寸不准的根因）
     if (!container.isConnected || container.getBoundingClientRect().height === 0) return _lastGoodH;
     // 填充类会放宽内部滚动区上限（vpl-list/vpl-rd-grid max-height:none），带着它量
     // 自然高会把内容高量成天文数字 → computeSize 把节点无限撑大 ↔ 填充收回复位
-    // 来回打架 = 底部抽搐；测量必须始终在上限生效的口径下进行
+    // 来回打架 = 底部抽搐；测量必须始终在上限生效的口径下进行。
+    // uncapped=true 例外：豁免 vpl-list 480 上限按"全部组卡片完整可见"量——只用于
+    // 拖矮钳制下限（对齐随机抽卡 v3.118：节点拖不进切卡窗口）
     const hadFill = container.classList.contains("vpl-fill");
     if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
+    const prevListMax = els.list.style.maxHeight;
     container.style.height = "auto";
     container.style.maxHeight = "none";
+    if (uncapped) els.list.style.maxHeight = "none";
     void container.offsetHeight; // 强制 reflow
     const h = container.scrollHeight;
+    els.list.style.maxHeight = prevListMax;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
     if (hadFill) container.classList.add("vpl-fill");
-    if (h > 0) _lastGoodH = h;
+    if (h > 0 && !uncapped) _lastGoodH = h;
     return h > 0 ? h : 460;
   }
 
@@ -1066,7 +1071,7 @@ function startController(node) {
   installFillResize(node, {
     el: () => container,
     chrome: chromeH,
-    floor: () => _cachedTotalH,
+    floor: () => Math.max(_cachedTotalH || 0, _vplFloorH || 0),
     minWidth: NODE_WIDTH,
     margin: 8,
     onSettled: () => recalcHeight(),
@@ -1837,6 +1842,7 @@ function startController(node) {
   //     BOTTOM_GAP(18px 节点色底缝)——旧的写死 +50 正是“提示词库/随机抽卡底缝没变宽”的原因
   let _recalcPending = false;
   let _cachedTotalH = 0; // 填充模式下限：节点总高 = 内容 + chrome + 底缝（recalcHeight 维护）
+  let _vplFloorH = 0;    // 拖矮钳制下限：按"全部组卡片完整可见"（豁免 480 上限）量，卡片永不被窗口切
   function recalcHeight() {
     if (_recalcPending) return;
     _recalcPending = true;
@@ -1845,6 +1851,8 @@ function startController(node) {
       const h = realContentH();
       if (h <= 0) return;
       _cachedTotalH = h + chromeH() + BOTTOM_GAP;
+      const fu = realContentH(true);
+      if (fu > 0) _vplFloorH = fu + chromeH() + BOTTOM_GAP;
       // v3.25 修复「节点拉大后拉不回」：宽度沿用用户当前 node.size[0]（不记忆放大），
       // 保底 NODE_WIDTH 由 node.computeSize 负责；不再每帧用 Math.max 重设宽度，
       // 避免 ResizeObserver 反馈与 resize 手柄竞争导致缩小拖拽失效。

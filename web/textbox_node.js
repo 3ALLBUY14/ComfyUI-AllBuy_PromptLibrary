@@ -58,7 +58,11 @@ function recalcHeight(node) {
 }
 
 function apiGet(path) {
-  return fetch(API + path).then((r) => r.json().catch(() => ({ ok: false })));
+  // .catch 兜 fetch 网络层 reject（后端重启/断连抛 TypeError: Failed to fetch），
+  // 归一成 ok:false 走"无数据"分支；调用方再以 loadFailed 区分网络错误给出提示
+  return fetch(API + path)
+    .then((r) => r.json().catch(() => ({ ok: false })))
+    .catch(() => ({ ok: false, loadFailed: true }));
 }
 function apiPost(path, body) {
   return fetch(API + path, {
@@ -167,6 +171,11 @@ function saveToLibrary(text, onDone) {
     const libs = await userLibraries();
     libSel.innerHTML = "";
     if (!libs.length) {
+      if ((await apiGet("/version")).loadFailed) {
+        libSel.appendChild(el("option", null, "⚠ 无法连接后端")).value = "";
+        list.appendChild(el("div", "vpl-empty", "连接后端失败：请检查 ComfyUI 是否在运行，关掉此弹窗稍后重试"));
+        return;
+      }
       libSel.appendChild(el("option", null, "（无用户库）")).value = "";
       libSel.disabled = true;
       return;
@@ -190,6 +199,11 @@ function insertFromLibrary(onInsert) {
     const libs = await userLibraries();
     libSel.innerHTML = "";
     if (!libs.length) {
+      if ((await apiGet("/version")).loadFailed) {
+        libSel.appendChild(el("option", null, "⚠ 无法连接后端")).value = "";
+        list.appendChild(el("div", "vpl-empty", "连接后端失败：请检查 ComfyUI 是否在运行，关掉此弹窗稍后重试"));
+        return;
+      }
       libSel.appendChild(el("option", null, "（无用户库）")).value = "";
       list.appendChild(el("div", "vpl-empty", "还没有用户库，先在提示词库面板创建"));
       return;

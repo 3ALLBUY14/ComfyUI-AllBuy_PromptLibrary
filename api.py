@@ -166,7 +166,10 @@ async def draw(request):
     except Exception:  # noqa: BLE001
         return _json_error("请求体不是合法 JSON")
     try:
-        result = random_draw.draw(
+        # 大库+通配符展开是毫秒到百毫秒级重活，同步跑会卡住事件循环上所有 HTTP/WS
+        #（v3.118 只封了死循环，同步阻塞仍在）——对齐 save_library/thumb 的 to_thread 口径
+        result = await asyncio.to_thread(
+            random_draw.draw,
             library=body.get("library", "user:default"),
             count=body.get("count", 1),
             seed=body.get("seed", 0),

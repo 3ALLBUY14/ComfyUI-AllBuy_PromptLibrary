@@ -612,13 +612,37 @@ function startController(node) {
     return Array.from(set).sort();
   }
 
+  // ---- 卡片元素复用池（v3.121）：renderGrid 全量重建的成本在大目录下集中在 <img>
+  // 重建（几百张图重新解码/布局）；按内容签名复用未变化的卡片，只有变化的卡才重建。
+  // 签名覆盖卡片渲染的全部状态依赖：视图/缩略图尺寸/文件 mtime/文件名/分类/分组/挂组 chips。
+  let _cardPool = new Map(); // abs -> { el, sig }
+  let _nextPool = null;      // 渲染期间的新池，renderGrid 结束时换任（未复用的旧元素随之丢弃）
+  function cardFor(im) {
+    const size = Math.max(MIN_THUMB, state.thumbnailSize);
+    const gidsKey = state.links
+      .filter((l) => l.abs === im.abs && state.libraryGroups.some((x) => x.id === l.gid))
+      .map((l) => l.gid)
+      .join(",");
+    const sig = [state.view, size, im.mtime || 0, im.file, im.category || "", im.group || "", gidsKey].join("");
+    const hit = _cardPool.get(im.abs);
+    if (hit && hit.sig === sig) {
+      hit.el.classList.toggle("bips-selected", state.bulkSel.has(im.abs));
+      _nextPool.set(im.abs, { el: hit.el, sig });
+      return hit.el;
+    }
+    const el = renderCard(im);
+    _nextPool.set(im.abs, { el, sig });
+    return el;
+  }
+
   function renderGrid() {
     // 重建网格保留滚动位置（批量勾选/指派后不再跳顶）
     const keepScroll = els.body.scrollTop;
     const list = visibleImages();
     els.empty.style.display = list.length ? "none" : "block";
     els.grid.innerHTML = "";
-    if (!list.length) { els.body.scrollTop = keepScroll; return; }
+    _nextPool = new Map();
+    if (!list.length) { _cardPool = _nextPool; _nextPool = null; els.body.scrollTop = keepScroll; return; }
     const keys = groupKeys(list);
     keys.forEach((key) => {
       const sectionImgs = key == null ? list : list.filter((im) => ((im[state.groupBy] || "未分组").trim() || "未分组") === key);
@@ -645,12 +669,14 @@ function startController(node) {
         const cols = Math.max(1, Math.floor((inner + 10) / (size + 10)));
         const colDivs = [];
         for (let i = 0; i < cols; i++) colDivs.push(h("div", { class: "bips-mcol" }));
-        sectionImgs.forEach((im, i) => colDivs[i % cols].appendChild(renderCard(im)));
+        sectionImgs.forEach((im, i) => colDivs[i % cols].appendChild(cardFor(im)));
         colDivs.forEach((c) => wrap.appendChild(c));
       } else {
-        sectionImgs.forEach((im) => wrap.appendChild(renderCard(im)));
+        sectionImgs.forEach((im) => wrap.appendChild(cardFor(im)));
       }
     });
+    _cardPool = _nextPool;
+    _nextPool = null;
     els.body.scrollTop = keepScroll;
   }
 

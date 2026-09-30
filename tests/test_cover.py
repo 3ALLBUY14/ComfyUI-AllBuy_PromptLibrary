@@ -37,6 +37,17 @@ def make_png(color=(200, 100, 50), size=(64, 48)):
     return buf.getvalue()
 
 
+class TestLibraryStoreGuards(unittest.TestCase):
+    """v3.121：保留库名拦截——lora_groups 与 LoRA 分组存储共用同一 json，互踩清数据。"""
+
+    def test_create_library_rejects_reserved_name(self):
+        with self.assertRaises(ValueError):
+            library_store.create_library("lora_groups")
+
+    def test_reserved_set_covers_lora_groups(self):
+        self.assertIn("lora_groups", library_store._RESERVED_LIBRARY_NAMES)
+
+
 class TestCover(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

@@ -221,9 +221,14 @@ def all_library_paths():
     return paths
 
 
+_RESERVED_LIBRARY_NAMES = {"lora_groups"}  # 与 lora_groups_store 的分组存储同名会共用同一 json 互相覆盖
+
+
 def create_library(name):
     """在用户目录创建新库，返回 locator。"""
     safe = _sanitize_filename(name)
+    if safe in _RESERVED_LIBRARY_NAMES:
+        raise ValueError(f"库名 {safe} 是系统保留名，请换一个")
     path = _user_path(safe)
     if os.path.isfile(path):
         raise FileExistsError(f"库已存在: {safe}")
