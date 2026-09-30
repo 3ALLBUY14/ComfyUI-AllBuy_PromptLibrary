@@ -2754,10 +2754,13 @@ body > .bips-lightbox-ghost { z-index: 10000; }
    填充模式（v3.109，panel_guard vpl-fill 类）：节点被拉高时面板跟满节点，
    内部主滚动区解除自身上限吃掉多余高度；回到内容高时类被摘除恢复自然布局
    ========================================================================== */
-.bips-node.vpl-fill .bips-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* 注意：主样式带 max-height 的滚动区（bips-body 440 / media-grid 600）在填充态必须一并解除，
+   只给 flex 撑开不解除上限会封顶在原上限——拉高后下半截全空白（批量选图实测踩坑） */
+.bips-node.vpl-fill .bips-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; max-height: none; }
 .bips-node.vpl-fill .bips-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .media-node.vpl-fill .media-panel { flex: 1 1 auto; min-height: 0; }
 .media-node.vpl-fill .media-grid-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.media-node.vpl-fill .media-grid { max-height: none; }
 .vpl-node.vpl-fill .vpl-panel-body { flex: 1 1 auto; min-height: 0; }
 .vpl-node.vpl-fill .vpl-list { flex: 1 1 auto; min-height: 0; max-height: none; }
 .vpl-node.vpl-fill .vpl-rd-grid { flex: 1 1 auto; min-height: 120px; max-height: none; }
