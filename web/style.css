@@ -2563,12 +2563,14 @@ body > .bips-lightbox-ghost { z-index: 10000; }
   padding: 10px;
   border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-lg);
   background: var(--vpl-bg-panel);
+  /* 填充模式下放不下的内容出滚动条（自然高度模式内容恰好放下，无副作用） */
+  overflow-y: auto; overflow-x: hidden;
 }
 .atb-tbar { display: flex; align-items: center; gap: 6px; }
 .atb-tbar .vpl-btn { flex: none; }
 .atb-area {
   width: 100%; box-sizing: border-box; resize: vertical;
-  min-height: 360px; max-height: 640px;
+  flex: 1 1 auto; min-height: 360px;
   line-height: 1.55; font-size: 13px;
   font-family: var(--vpl-mono, ui-monospace, Consolas, monospace);
   /* 内容随框宽软换行（保留手动换行，长行不再横向滚动） */

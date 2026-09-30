@@ -31,6 +31,13 @@ function stackChromeH(node) {
   return Math.min(y, STACK_MAX_CHROME);
 }
 
+function fillPanel(node, panel, chrome) {
+  // 填充模式：面板高度跟满节点，多余空间由文本区（flex:1）吃掉；节点变矮于内容
+  // 下限时由调用方钳回，故这里只管"高了多少填多少"。底部留 18px（wrapper +10 偏移）
+  const h = Math.max(0, Math.round((node.size?.[1] || 0) - chrome - STACK_BOTTOM_GAP));
+  panel.style.height = h + "px";
+}
+
 function recalcHeight(node) {
   if (!node || typeof node.setSize !== "function" || node._atbHeightPending) return;
   node._atbHeightPending = true;
@@ -38,10 +45,18 @@ function recalcHeight(node) {
     node._atbHeightPending = false;
     const panel = node?._atbContainer;
     if (!panel?.isConnected) return;
+    const chrome = stackChromeH(node);
+    panel.style.height = ""; // 先回自然高度量内容下限（填充模式下也要量）
     const host = panel.parentElement || panel;
     const measured = Math.ceil(host.scrollHeight || host.offsetHeight || 0);
-    const h = Math.max(STACK_MIN_TOTAL_H, measured + stackChromeH(node) + STACK_BOTTOM_GAP);
+    const h = Math.max(STACK_MIN_TOTAL_H, measured + chrome + STACK_BOTTOM_GAP);
     node._atbCachedH = h;
+    if ((node.size?.[1] || 0) > h + 1) {
+      // 节点比内容高（用户拉高或工作流存了更大尺寸）：面板填满节点，不缩回去
+      fillPanel(node, panel, chrome);
+      app.graph?.setDirtyCanvas?.(true, true);
+      return;
+    }
     if (node.size?.[1] === h) return;
     node.setSize([node.size?.[0] || STACK_MIN_WIDTH, h]);
     app.graph?.setDirtyCanvas?.(true, true);
@@ -413,6 +428,20 @@ function attach(node) {
   [60, 250, 600].forEach((t) => setTimeout(() => recalcHeight(node), t));
   const ro = new ResizeObserver(() => recalcHeight(node));
   ro.observe(container);
+  // 用户拖拽节点大小（setSize 每次移动都会回调 onResize）与工作流载入的大尺寸
+  // 都走这里：拉高→面板跟满；拉矮→钳到内容下限；等于内容高→保持自然布局
+  const _origOnResize = node.onResize;
+  node.onResize = function () {
+    _origOnResize?.apply(this, arguments);
+    const panel = this._atbContainer;
+    if (!panel?.isConnected || !this._atbCachedH) return;
+    const chrome = stackChromeH(this);
+    if ((this.size?.[1] || 0) < this._atbCachedH) {
+      this.setSize([this.size?.[0] || STACK_MIN_WIDTH, this._atbCachedH]);
+    } else if ((this.size?.[1] || 0) > this._atbCachedH + 1) {
+      fillPanel(this, panel, chrome);
+    }
+  };
   const _origOnRemoved = node.onRemoved;
   node.onRemoved = function () {
     _origOnRemoved?.apply(this, arguments);
