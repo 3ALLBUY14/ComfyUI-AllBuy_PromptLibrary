@@ -2763,3 +2763,12 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .vpl-node.vpl-fill .vpl-rd-grid { flex: 1 1 auto; min-height: 120px; max-height: none; }
 /* 填充态下容器高度固定，内容增长不再触发 RO——上面整条收缩链保证任何内容量下
    底栏都被钉在容器内、超出部分由主滚动区内部消化，不会把底栏顶出节点框 */
+
+/* 抽卡结果网格滚动条：可见主题条（对齐 .vpl-list），否则超出窗口的卡片看起来像无故被裁 */
+.vpl-rd-grid::-webkit-scrollbar { width: 8px; }
+.vpl-rd-grid::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+}
+.vpl-rd-grid::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+.vpl-rd-grid::-webkit-scrollbar-track { background: transparent; }

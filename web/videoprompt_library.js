@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.112"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.113"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -3128,6 +3128,7 @@ function startRandomController(node) {
         grid.appendChild(card);
         _gridCards.set(g.id, { card, lockInd });
       }
+      grid.scrollTop = 0; // 重建后从第一张卡完整显示（保留旧滚动位置会让首尾卡被拦腰裁切，看起来像出框）
     }
     let drawnN = 0;
     let shownN = 0;
