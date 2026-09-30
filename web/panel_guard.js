@@ -128,11 +128,13 @@ export function installFillResize(node, opts) {
     const el = opts.el();
     if (!el?.isConnected || el.getBoundingClientRect().height === 0) return; // 远缩放/离屏被剔除时不动
     const floor = opts.floor ? opts.floor() : 0;
-    if (floor && (n.size?.[1] || 0) < floor) {
+    if (!floor) return; // 内容下限未就绪（recalc 未跑过/rAF 冻结）：不做也不记 lastAppliedH，
+                        // 否则轮询把这个高度当成"已处理"，缓存就绪后永远跳过（no-op 吞掉修复）
+    if ((n.size?.[1] || 0) < floor) {
       n.setSize([n.size?.[0] || opts.minWidth || n.size?.[0], floor]);
     }
     const h = n.size?.[1] || 0;
-    if (floor && h > floor + 1) {
+    if (h > floor + 1) {
       applyFillPanel(n, el, opts.chrome(), opts.margin ?? 18);
     } else if (el.classList.contains("vpl-fill")) {
       clearFillPanel(el);

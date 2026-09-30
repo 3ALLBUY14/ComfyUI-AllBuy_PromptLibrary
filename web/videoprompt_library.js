@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.117"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.118"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -2953,25 +2953,30 @@ function startRandomController(node) {
     const y = domWidget && typeof domWidget.y === "number" ? domWidget.y : 0;
     return y > 0 ? y : 50;
   }
-  function realContentH() {
+  function realContentH(uncapped) {
     // 远缩放/节点离屏时前端会 display:none 隐藏 DOM 面板（容器高度归 0），
     // 此时测量值无意义：返回上次可见时的缓存高度，防止节点高度被错误改写
     if (!container.isConnected || container.getBoundingClientRect().height === 0) return _lastGoodH;
     // 填充类会放宽 vpl-rd-grid 的 220 上限，带着它量自然高会把内容高量成天文数字
     // → computeSize 把节点无限撑大 ↔ 填充收回复位来回打架 = 底部抽搐；
-    // 测量必须始终在上限生效的口径下进行
+    // 测量必须始终在上限生效的口径下进行。
+    // uncapped=true 例外：豁免 220 上限按"全部卡片完整可见"量——只用于拖矮钳制的
+    // 下限（floor），保证节点拖不进"切卡窗口"（用户要求卡片不被折叠压缩）
     const hadFill = container.classList.contains("vpl-fill");
     if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
+    const prevGridMax = grid.style.maxHeight;
     container.style.height = "auto";
     container.style.maxHeight = "none";
+    if (uncapped) grid.style.maxHeight = "none";
     void container.offsetHeight;
     const hh = container.scrollHeight;
+    grid.style.maxHeight = prevGridMax;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
     if (hadFill) container.classList.add("vpl-fill");
-    if (hh > 0) _lastGoodH = hh;
+    if (hh > 0 && !uncapped) _lastGoodH = hh; // 兜底缓存只用常规口径，无上限量不写入
     return hh > 0 ? hh : 460;
   }
   try {
@@ -2985,6 +2990,7 @@ function startRandomController(node) {
 
   let _recalcPending = false;
   let _rdCachedH = 0; // 填充模式下限：节点总高 = 内容 + chrome + 底缝（recalcHeight 维护）
+  let _rdFloorH = 0;  // 拖矮钳制下限：按"全部卡片完整可见"（豁免 220 上限）量，卡片永不被窗口切
   function recalcHeight() {
     if (_recalcPending) return;
     _recalcPending = true;
@@ -2993,6 +2999,8 @@ function startRandomController(node) {
       const hh = realContentH();
       if (hh <= 0) return;
       _rdCachedH = hh + chromeH() + BOTTOM_GAP;
+      const fu = realContentH(true);
+      if (fu > 0) _rdFloorH = fu + chromeH() + BOTTOM_GAP;
       const w = node.size[0] && node.size[0] > 0 ? node.size[0] : NODE_WIDTH;
       if ((node.size[1] || 0) > _rdCachedH + 1) {
         // 节点比内容高（用户拉高/工作流存了更大尺寸）：容器填满节点，不缩回
@@ -3023,7 +3031,7 @@ function startRandomController(node) {
   installFillResize(node, {
     el: () => container,
     chrome: chromeH,
-    floor: () => _rdCachedH,
+    floor: () => Math.max(_rdCachedH || 0, _rdFloorH || 0),
     minWidth: NODE_WIDTH,
     margin: 8,
     onSettled: () => recalcHeight(),
@@ -3131,6 +3139,7 @@ function startRandomController(node) {
         _gridCards.set(g.id, { card, lockInd });
       }
       grid.scrollTop = 0; // 重建后从第一张卡完整显示（保留旧滚动位置会让首尾卡被拦腰裁切，看起来像出框）
+      recalcHeight(); // 填充态容器尺寸不变 RO 不触发，主动刷新下限（新卡数量变了钳制高度也要变）
     }
     let drawnN = 0;
     let shownN = 0;
