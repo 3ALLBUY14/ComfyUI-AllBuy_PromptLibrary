@@ -1524,9 +1524,12 @@
 .vpl-rd-statusrow.vpl-rd-narrow .vpl-rd-preview-text { display: none; }
 
 /* 卡片网格 */
+/* 结果卡固定尺寸（用户要求：拉小节点不压扁卡片）：列宽固定不随节点伸缩，
+   卡片高度由内容决定——节点拉小/拉窄时列数与卡片大小不变，超出在网格内滚动 */
 .vpl-rd-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 6px; max-height: 220px; overflow-y: auto; padding: 2px; align-content: start;
+  display: grid; grid-template-columns: repeat(auto-fill, 172px); justify-content: start;
+  gap: 6px; max-height: 220px; overflow: auto; padding: 2px; align-content: start;
+  /* overflow-x:auto：节点被拉到比卡片还窄时横向滚动，不裁切也不换行压扁 */
 }
 .vpl-rd-card {
   position: relative; display: flex; flex-direction: column; gap: 3px;
