@@ -109,31 +109,52 @@ export function clearFillPanel(el) {
   el.classList.remove("vpl-fill");
 }
 
-// onResize 钩子：新前端 setSize 每次都回调它，工作流载入的大尺寸也走这里。
-// 拖矮到内容下限以下先钳回（钳回触发的内层 onResize 也会走到填充分支），再按需填充。
-// 拖拽停稳后（180ms 无新 resize）回调 opts.onSettled 做一次重校准：拖拽中用的下限
-// 可能是旧内容量出来的（内容随后增长过），松手后按最新内容回弹，否则填充窗口被压成
-// 一条缝、底栏和卡片叠在一起（用户报的"拉小了底部被叠没"）。
+// 拖高/拖矮跟随（v3.115 重构）：新前端有两条改尺寸的路径——
+//   ① node.setSize()（程序化/工作流载入）：方法体自带 onResize 回调；
+//   ② 画布拖拽（Canvas 来源）：直接写 size 数组元素 → 布局存储，【实测一次都不回调
+//      onResize，也不触发 RO】——挂 onResize 的钳制/填充对真实拖拽全部失效，节点
+//      变矮而面板保留旧填充高度冲出节点框（"拉小了底栏卡片叠没"的根因）。
+// 解法：onResize 照挂（①路径零延迟），另挂 onDrawBackground 每帧轮询补②——
+// 高度与上次应用值一致时只做一次数字比较（零 DOM 访问），有变化才走完整逻辑。
+// 拖拽停稳后（180ms 无新变化）回调 opts.onSettled 做一次重校准：拖拽中用的下限
+// 可能是旧内容量出来的，松手后按最新内容回弹。
 export function installFillResize(node, opts) {
   const orig = node.onResize;
+  const origDraw = node.onDrawBackground;
   let settleTimer = 0;
-  node.onResize = function () {
-    orig?.apply(this, arguments);
+  let lastAppliedH = NaN;
+
+  const apply = (n) => {
     const el = opts.el();
     if (!el?.isConnected || el.getBoundingClientRect().height === 0) return; // 远缩放/离屏被剔除时不动
     const floor = opts.floor ? opts.floor() : 0;
-    if (floor && (this.size?.[1] || 0) < floor) {
-      this.setSize([this.size?.[0] || opts.minWidth || this.size?.[0], floor]);
+    if (floor && (n.size?.[1] || 0) < floor) {
+      n.setSize([n.size?.[0] || opts.minWidth || n.size?.[0], floor]);
     }
-    const h = this.size?.[1] || 0;
+    const h = n.size?.[1] || 0;
     if (floor && h > floor + 1) {
-      applyFillPanel(this, el, opts.chrome(), opts.margin ?? 18);
+      applyFillPanel(n, el, opts.chrome(), opts.margin ?? 18);
     } else if (el.classList.contains("vpl-fill")) {
       clearFillPanel(el);
     }
+    lastAppliedH = n.size?.[1] || 0;
     if (opts.onSettled) {
       clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => { if (el.isConnected) opts.onSettled(); }, 180);
+      settleTimer = setTimeout(() => { if (opts.el()?.isConnected) opts.onSettled(); }, 180);
     }
   };
+
+  node.onResize = function () {
+    orig?.apply(this, arguments);
+    apply(this);
+  };
+  // 画布拖拽路径的补位轮询：绘制帧必达，只比较高度数字，一致即返回
+  node.onDrawBackground = function () {
+    origDraw?.apply(this, arguments);
+    const h = this.size?.[1] || 0;
+    if (h === lastAppliedH) return;
+    apply(this);
+  };
+  // 初值：让首个绘制帧先跑一次 apply（填充/清除到当前真实高度）
+  lastAppliedH = NaN;
 }
