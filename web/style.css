@@ -2560,6 +2560,7 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .atb-node { gap: 0; }
 .atb-panel {
   display: flex; flex-direction: column; gap: 6px;
+  box-sizing: border-box; /* 填充模式下声明的 px 高即渲染外沿高，padding/边框不再外溢出节点 */
   padding: 10px;
   border: 1px solid var(--vpl-border); border-radius: var(--vpl-r-lg);
   background: var(--vpl-bg-panel);

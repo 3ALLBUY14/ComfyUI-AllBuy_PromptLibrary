@@ -32,9 +32,14 @@ function stackChromeH(node) {
 }
 
 function fillPanel(node, panel, chrome) {
-  // 填充模式：面板高度跟满节点，多余空间由文本区（flex:1）吃掉；节点变矮于内容
-  // 下限时由调用方钳回，故这里只管"高了多少填多少"。底部留 18px（wrapper +10 偏移）
-  const h = Math.max(0, Math.round((node.size?.[1] || 0) - chrome - STACK_BOTTOM_GAP));
+  // 填充模式：面板高度跟满节点，多余空间由文本区（flex:1）吃掉。实测几何链：
+  // 容器顶 = widget.y + 10（前端锚点偏移），容器有上下 padding（.vpl-node 基类
+  // 12+10，活量不硬编码），面板底再留 8px 视觉边距 → 面板高 = 节点高 - 全部开销。
+  // 面板自身 border-box，声明高即渲染外沿高。
+  const host = panel.parentElement;
+  const cs = host ? getComputedStyle(host) : null;
+  const padV = cs ? (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) : 0;
+  const h = Math.max(0, Math.round((node.size?.[1] || 0) - chrome - STACK_BOTTOM_GAP - padV));
   panel.style.height = h + "px";
 }
 
@@ -429,18 +434,17 @@ function attach(node) {
   const ro = new ResizeObserver(() => recalcHeight(node));
   ro.observe(container);
   // 用户拖拽节点大小（setSize 每次移动都会回调 onResize）与工作流载入的大尺寸
-  // 都走这里：拉高→面板跟满；拉矮→钳到内容下限；等于内容高→保持自然布局
+  // 都走这里：拉高→面板跟满；拖矮→先钳到内容下限；随后一律重新填充，
+  // 保证钳回/缩小时面板同步缩回（否则残留上一次的大高度冲出节点底）
   const _origOnResize = node.onResize;
   node.onResize = function () {
     _origOnResize?.apply(this, arguments);
     const panel = this._atbContainer;
     if (!panel?.isConnected || !this._atbCachedH) return;
-    const chrome = stackChromeH(this);
     if ((this.size?.[1] || 0) < this._atbCachedH) {
       this.setSize([this.size?.[0] || STACK_MIN_WIDTH, this._atbCachedH]);
-    } else if ((this.size?.[1] || 0) > this._atbCachedH + 1) {
-      fillPanel(this, panel, chrome);
     }
+    fillPanel(this, panel, stackChromeH(this));
   };
   const _origOnRemoved = node.onRemoved;
   node.onRemoved = function () {
