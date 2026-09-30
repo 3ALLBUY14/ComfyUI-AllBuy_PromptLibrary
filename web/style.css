@@ -2757,5 +2757,9 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .bips-node.vpl-fill .bips-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 .bips-node.vpl-fill .bips-grid { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .media-node.vpl-fill .media-panel { flex: 1 1 auto; min-height: 0; }
-.vpl-node.vpl-fill .vpl-list { flex: 1 1 auto; max-height: none; }
+.media-node.vpl-fill .media-grid-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.vpl-node.vpl-fill .vpl-panel-body { flex: 1 1 auto; min-height: 0; }
+.vpl-node.vpl-fill .vpl-list { flex: 1 1 auto; min-height: 0; max-height: none; }
 .vpl-node.vpl-fill .vpl-rd-grid { flex: 1 1 auto; min-height: 120px; max-height: none; }
+/* 填充态下容器高度固定，内容增长不再触发 RO——上面整条收缩链保证任何内容量下
+   底栏都被钉在容器内、超出部分由主滚动区内部消化，不会把底栏顶出节点框 */
