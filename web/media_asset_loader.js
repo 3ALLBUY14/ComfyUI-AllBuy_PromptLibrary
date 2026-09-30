@@ -8,7 +8,7 @@
 //   顶部槽位带：onDrawBackground 画 图片/视频/音频 三联预览卡，消除 8 输出口的留白区；
 //         预览卡底板与卡片都在右侧接口标签保留区（HERO_PORT_ZONE）前停住，绝不进入。
 import { app } from "../../scripts/app.js";
-import { installBypassSync, installExecutionLock, applyFillPanel, clearFillPanel, installFillResize } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, clearFillPanel, installFillResize, installCornerHover } from "./panel_guard.js";
 
 const API = "/allbuy_promptlibrary";
 const NODE_NAME = "MediaAssetLoader";
@@ -496,7 +496,45 @@ function startMediaPanel(node, container, wManifest) {
   ]);
 
   const panel = h("div", { class: "media-panel" }, [tbar, els.tabs, els.gridWrap, els.empty, els.sizePop]);
+  // ---- 右下角悬停浮出（v3.122）：全选/清空当前页选择，光标靠近右下角才显示 ----
+  const corner = h("div", { class: "vpl-corner-actions" });
+  const selAllBtn = h("button", { class: "media-btn pri", type: "button",
+    title: "选中当前页全部素材（图片=多选全选；音频/视频=选中第一个）" }, ["全选"]);
+  const clearSelBtn = h("button", { class: "media-btn clear", type: "button",
+    title: "清空当前页的选择（不删除素材本身）" }, ["取消全选"]);
+  for (const b of [selAllBtn, clearSelBtn]) {
+    b.classList.add("alora-control");
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("mousedown", (e) => e.stopPropagation());
+  }
+  selAllBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const vis = visibleAssets();
+    if (!vis.length) return;
+    if (state.tab === "image") {
+      // 保持 selected.image 的既有顺序语义：已选的保序在前，未选的按可见顺序追加
+      const set = new Set(state.selected.image);
+      state.selected.image = [
+        ...state.selected.image.filter((id) => set.has(id)),
+        ...vis.filter((a) => a.type === "image" && !set.has(a.id)).map((a) => a.id),
+      ];
+    } else {
+      state.selected[state.tab] = vis[0].id; // 音/视频是单选模型：全选=选中第一个可见项
+    }
+    save();
+    render();
+  });
+  clearSelBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (state.tab === "image") state.selected.image = [];
+    else state.selected[state.tab] = null;
+    save();
+    render();
+  });
+  corner.append(selAllBtn, clearSelBtn);
   container.append(panel, els.footer);
+  container.appendChild(corner);
+  const uninstallCorner = installCornerHover(container, corner);
 
   // 通用确认弹窗（清空等破坏性操作）：复用 .media-overlay/.media-dialog，点遮罩=取消
   let confirmDlg = null;
@@ -1493,6 +1531,7 @@ function startMediaPanel(node, container, wManifest) {
     document.removeEventListener("paste", onPaste);
     document.removeEventListener("pointerdown", onDocPointerClose, true);
     ro?.disconnect(); // RO 持有 container 强引用，不摘会钉住整个面板闭包（ro 在下方创建，调用时已就绪）
+    uninstallCorner();
   };
 
   // ---- DOM widget 与高度管理（bips 同款：缓存驱动，绝不现场测量）----

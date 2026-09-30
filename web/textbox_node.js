@@ -4,7 +4,7 @@
 //   快速对接提示词库（/libraries + /library + /library/save），@素材名 实时统计
 //   提示（→ image1..10）。样式沿用 .vpl-* 统一体系。
 import { app } from "../../scripts/app.js";
-import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
+import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize, installCornerHover } from "./panel_guard.js";
 
 const NODE_NAME = "AllBuyTextBox";
 const API = "/allbuy_promptlibrary";
@@ -307,12 +307,12 @@ function attach(node) {
     }
     setTimeout(() => { copyBtn.textContent = "复制"; }, 1200);
   });
-  const pasteBtn = iconBtn("粘贴", "读剪贴板插入到光标处（无权限时聚焦手动 Ctrl+V）", async () => {
+  const pasteBtn = iconBtn("粘贴", "读剪贴板【替换全部内容】（无权限时聚焦手动 Ctrl+V）", async () => {
     let text = null;
     try { text = await navigator.clipboard.readText(); } catch (_) {}
     if (text && text.trim()) {
-      insertAtCursor(area, text);
-      scheduleSave();
+      area.value = text; // 用户要求：粘贴=清空原内容后覆盖（不再插入光标处）
+      flush();
       pasteBtn.textContent = "✓";
     } else {
       area.focus();
@@ -373,6 +373,7 @@ function attach(node) {
     if (timer) { clearTimeout(timer); timer = 0; }
     if (wText) wText.value = area.value;
     if (wRep) wRep.value = repArea.value;
+    histPush(area.value); // 编辑历史：防抖合并后的快照（程序化恢复由 _histLock 挡住）
     node.setDirtyCanvas?.(true, true);
   };
   const scheduleSave = () => {
@@ -385,8 +386,11 @@ function attach(node) {
 
   const insertAtCursor = (ta, text) => {
     if (!text) return;
-    const s = ta.selectionStart ?? ta.value.length;
-    const e = ta.selectionEnd ?? s;
+    // 未聚焦时不信选区：复制按钮降级路径的 area.select() 全选会残留，被当"选区替换"
+    // 执行就成了清空原内容（用户报的粘贴清空）；未聚焦一律追加到末尾
+    const focused = document.activeElement === ta;
+    const s = focused ? (ta.selectionStart ?? ta.value.length) : ta.value.length;
+    const e = focused ? (ta.selectionEnd ?? s) : ta.value.length;
     const pre = ta.value.slice(0, s);
     const post = ta.value.slice(e);
     const glue = pre && !pre.endsWith("\n") && !pre.endsWith(" ") ? "\n" : "";
@@ -395,6 +399,79 @@ function attach(node) {
     ta.focus();
     ta.setSelectionRange(pos, pos);
   };
+
+  // ---- 编辑历史（v3.122）：快照栈 + 撤销/重做/历史，右下角悬停浮出 ----
+  // 快照在 flush 防抖（200ms）落盘时合并入栈（连续打字一条记录）；程序化恢复不入栈。
+  const hist = [area.value || ""];
+  let hi = 0;
+  let _histLock = false;
+  function histPush(v) {
+    if (_histLock) return;
+    if (hist[hi] === v) return;
+    hist.splice(hi + 1);       // 截断撤销后的未来分支
+    hist.push(v);
+    if (hist.length > 40) hist.shift();
+    hi = hist.length - 1;
+    refreshHistBtns();
+  }
+  function histApply(idx) {
+    if (idx < 0 || idx >= hist.length) return;
+    hi = idx;
+    _histLock = true;
+    area.value = hist[hi];
+    flush();
+    updateBadge();
+    _histLock = false;
+    refreshHistBtns();
+  }
+  function refreshHistBtns() {
+    if (!cornerBtns) return;
+    cornerBtns.undo.disabled = hi <= 0;
+    cornerBtns.redo.disabled = hi >= hist.length - 1;
+    cornerBtns.histBtn.disabled = hist.length <= 1;
+  }
+
+  // 右下角悬停浮出条：光标靠近面板右下角（170×46 热区）才显示，平时隐藏且不挡点击
+  const corner = el("div", "vpl-corner-actions");
+  const cornerBtns = {};
+  cornerBtns.undo = iconBtn("↩", "撤销（回到上一条历史）", () => histApply(hi - 1));
+  cornerBtns.redo = iconBtn("↪", "重做（恢复被撤销的编辑）", () => histApply(hi + 1));
+  cornerBtns.histBtn = iconBtn("🕘", "历史记录：查看并恢复到任一快照", (e) => {
+    e.stopPropagation();
+    openHistPop(e.currentTarget);
+  });
+  corner.append(cornerBtns.undo, cornerBtns.redo, cornerBtns.histBtn);
+
+  function openHistPop(anchor) {
+    closeHistPop();
+    const pop = el("div", "vpl-corner-pop");
+    pop.append(el("div", "vpl-corner-pop-title", "编辑历史（最近 20 条，点击恢复）"));
+    const items = hist.slice(-20).map((v, k) => ({ v, idx: hist.length - 20 + k })).reverse();
+    if (items.length <= 1) pop.append(el("div", "vpl-empty", "还没有历史记录"));
+    for (const it of items) {
+      const row = el("div", "vpl-corner-pop-item" + (it.idx === hi ? " cur" : ""));
+      const preview = (it.v.split("\n").find((l) => l.trim()) || "（空）").slice(0, 40);
+      row.append(el("span", "vpl-corner-pop-idx", (it.idx === hi ? "● " : "") + " #" + (it.idx + 1)), el("span", "vpl-corner-pop-txt", preview));
+      row.addEventListener("click", (e) => { e.stopPropagation(); histApply(it.idx); closeHistPop(); });
+      pop.appendChild(row);
+    }
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    pop.style.bottom = Math.max(8, window.innerHeight - r.top + 6) + "px";
+    _histPop = pop;
+    setTimeout(() => {
+      document.addEventListener("mousedown", _histPopClose, true);
+    }, 0);
+  }
+  let _histPop = null;
+  function _histPopClose(e) { if (_histPop && !_histPop.contains(e.target)) closeHistPop(); }
+  function closeHistPop() {
+    if (_histPop) { _histPop.remove(); _histPop = null; document.removeEventListener("mousedown", _histPopClose, true); }
+  }
+
+  panel.appendChild(corner); // 右下角悬停浮出（历史/撤销/重做）
+  const uninstallCorner = installCornerHover(panel, corner);
 
   // 状态徽标：行数/去空行/@素材
   function updateBadge() {
@@ -451,6 +528,8 @@ function attach(node) {
   node.onRemoved = function () {
     _origOnRemoved?.apply(this, arguments);
     ro.disconnect();
+    uninstallCorner();
+    closeHistPop();
   };
   node._atbRecalc = () => recalcHeight(node);
 }

@@ -160,3 +160,26 @@ export function installFillResize(node, opts) {
   // 初值：让首个绘制帧先跑一次 apply（填充/清除到当前真实高度）
   lastAppliedH = NaN;
 }
+
+
+// ---------------------------------------------------------------------------
+// 右下角悬停浮出（v3.122）：光标进入 host 元素右下 170×46 热区→corner 加 .show，
+// 离开/移出→隐藏。挂 document 级（host 容器常是 pointer-events:none 的穿透层，
+// 自身收不到 mousemove）；host 被剔除（rect 0）或摘除 DOM 时自动跳过。
+// 返回卸载函数（节点 onRemoved 时调用）。
+// ---------------------------------------------------------------------------
+export function installCornerHover(host, corner) {
+  const onMove = (e) => {
+    if (!host.isConnected) { corner.classList.remove("show"); return; }
+    const r = host.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) { corner.classList.remove("show"); return; } // 远缩放/离屏剔除
+    const near = e.clientX >= r.left && e.clientY >= r.top
+      && (r.right - e.clientX) < 170 && (r.bottom - e.clientY) < 46;
+    corner.classList.toggle("show", near || corner.matches(":hover"));
+  };
+  document.addEventListener("mousemove", onMove, { passive: true });
+  return () => {
+    document.removeEventListener("mousemove", onMove);
+    corner.classList.remove("show");
+  };
+}
