@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.110"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.111"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -987,6 +987,7 @@ function startController(node) {
     getValue() { return ""; },
     setValue() {},
     resize: false,
+    hideOnZoom: false, // 画布远缩放（low_quality）不隐藏面板（LoRA 堆栈同款，默认 true 会在缩小时整层消失）
   });
 
   // v3.51：旁路视觉同步 + 执行期间锁定（共享模块 panel_guard.js）
@@ -2935,6 +2936,7 @@ function startRandomController(node) {
     getValue() { return ""; },
     setValue() {},
     resize: false,
+    hideOnZoom: false, // 画布远缩放（low_quality）不隐藏面板（LoRA 堆栈同款，默认 true 会在缩小时整层消失）
   });
 
   // v3.51：旁路视觉同步 + 执行期间锁定（共享模块 panel_guard.js）

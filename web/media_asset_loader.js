@@ -1500,6 +1500,7 @@ function startMediaPanel(node, container, wManifest) {
     getValue() { return ""; },
     setValue() {},
     resize: false,
+    hideOnZoom: false, // 画布远缩放（low_quality）不隐藏面板（LoRA 堆栈同款，默认 true 会在缩小时整层消失）
   });
   installBypassSync(node, container);
   installExecutionLock(node, container);

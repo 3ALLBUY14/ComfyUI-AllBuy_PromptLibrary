@@ -222,6 +222,7 @@ function startController(node) {
     getValue() { return ""; },
     setValue() {},
     resize: false,
+    hideOnZoom: false, // 画布远缩放（low_quality）不隐藏面板（LoRA 堆栈同款，默认 true 会在缩小时整层消失）
   });
 
   // v3.51：旁路视觉同步 + 执行期间锁定（共享模块 panel_guard.js）

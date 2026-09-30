@@ -415,6 +415,7 @@ function attach(node) {
     getValue() { return ""; },
     setValue() {},
     resize: false,
+    hideOnZoom: false, // 画布远缩放（low_quality）不隐藏面板（LoRA 堆栈同款，默认 true 会在缩小时整层消失）
   });
   node._atbWidget = domWidget;
   domWidget.computeSize = () => [0, -4];
