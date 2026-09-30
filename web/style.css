@@ -2780,15 +2780,32 @@ body > .bips-lightbox-ghost { z-index: 10000; }
    右下角悬停浮出（v3.122，panel_guard installCornerHover）：光标靠近面板
    右下角热区才显示，平时透明且不挡点击（按钮 pointer-events 随显隐切换）
    ========================================================================== */
+/* v3.123 排版优化：胶囊底托成组（半透明毛玻璃+描边+阴影），贴右下角；
+   显隐带 3px 上浮动效；托内按钮幽灵化（透明底，hover 才高亮）避免"裸漂"观感 */
 .vpl-corner-actions {
-  position: absolute; right: 10px; bottom: 8px;
-  display: flex; gap: 4px; z-index: 30;
+  position: absolute; right: 6px; bottom: 5px; z-index: 30;
+  display: flex; gap: 2px; padding: 3px;
+  border-radius: 999px;
+  background: rgba(26,28,38,.86);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 4px 18px rgba(0,0,0,.4);
   opacity: 0; pointer-events: none;
-  transition: opacity .12s ease;
+  transform: translateY(4px);
+  transition: opacity .14s ease, transform .14s ease;
 }
-.vpl-corner-actions.show { opacity: 1; pointer-events: auto; }
-.vpl-corner-actions .vpl-btn { padding: 2px 8px; font-size: 12px; }
-.vpl-corner-actions .media-btn { padding: 3px 10px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.25); }
+.vpl-corner-actions.show { opacity: 1; pointer-events: auto; transform: none; }
+.vpl-corner-actions .vpl-btn {
+  padding: 2px 8px; font-size: 12px;
+  background: transparent; border: none; box-shadow: none;
+}
+.vpl-corner-actions .vpl-btn:hover { background: rgba(255,255,255,.12); }
+.vpl-corner-actions .media-btn {
+  padding: 3px 10px; font-size: 12px; box-shadow: none;
+}
+.vpl-corner-actions .media-btn:hover { box-shadow: none; filter: brightness(1.15); }
+/* 素材节点底部有独立的版本行（footer ≈33px 高），托上移避开盖字 */
+.media-node .vpl-corner-actions { bottom: 36px; }
 
 /* 历史记录弹窗（文本框🕘）：锚在浮出条上方 */
 .vpl-corner-pop {
