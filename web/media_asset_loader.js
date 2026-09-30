@@ -1525,6 +1525,10 @@ function startMediaPanel(node, container, wManifest) {
   // 节点高度若被算小（旧 MAX_DOM_H=880）内容必然溢出节点框；
   // 防测量跑飞靠下方可见性守卫 + rAF 合并，不靠钳制。
   function measureContentH() {
+    // 填充类会解除素材网格的 600 窗口上限，带着它量自然高会把下限抬到"全部内容"——
+    // 节点一旦拉高就缩不回去；测量必须在窗口口径下进行
+    const hadFill = container.classList.contains("vpl-fill");
+    if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
     container.style.height = "auto";
@@ -1533,6 +1537,7 @@ function startMediaPanel(node, container, wManifest) {
     const hh = container.scrollHeight || container.offsetHeight;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
+    if (hadFill) container.classList.add("vpl-fill");
     return Math.max(MIN_DOM_H, hh > 0 ? hh : MIN_DOM_H);
   }
   function realContentH() {

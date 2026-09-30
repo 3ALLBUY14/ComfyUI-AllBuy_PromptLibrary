@@ -254,6 +254,10 @@ function startController(node) {
   // 真实内容高度：临时 height:auto + max-height:none + 强制 reflow 后读取，
   // 绕开父容器（LiteGraph DOM widget 区域）强加的高度污染；读完立即恢复。
   function measureContentH() {
+    // 填充类会解除 body 的 440 窗口上限，带着它量自然高会把下限抬到"全部内容"——
+    // 节点一旦拉高就再也缩不回去（几百张图时永远卡在巨高）；测量必须在窗口口径下
+    const hadFill = container.classList.contains("vpl-fill");
+    if (hadFill) container.classList.remove("vpl-fill");
     const prevH = container.style.height;
     const prevMax = container.style.maxHeight;
     container.style.height = "auto";
@@ -262,6 +266,7 @@ function startController(node) {
     const h = container.scrollHeight || container.offsetHeight;
     container.style.height = prevH;
     container.style.maxHeight = prevMax;
+    if (hadFill) container.classList.add("vpl-fill");
     return Math.max(MIN_DOM_H, Math.min(h > 0 ? h : MIN_DOM_H, MAX_DOM_H));
   }
 
