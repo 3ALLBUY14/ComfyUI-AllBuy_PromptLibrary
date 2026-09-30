@@ -1532,6 +1532,7 @@ async function attach(node) {
       floor: () => node._aloraCachedH || 0,
       minWidth: STACK_MIN_WIDTH,
       margin: STACK_BOTTOM_GAP,
+      onSettled: () => recalcStackHeight(node),
     });
     node._aloraDropdowns = dropdowns;
     // 离屏/后台页挂载时 widget.y 未就绪，chrome 只能固化兜底值 96；首次被画布绘制后

@@ -1896,6 +1896,7 @@ function startMediaPanel(node, container, wManifest) {
     floor: () => _cachedTotalH,
     minWidth: NODE_WIDTH,
     margin: 8,
+    onSettled: () => recalcHeight(),
   });
 
   console.log(`%c[MediaAsset ${MEDIA_VERSION}] 面板已挂载`, "color:#27ae60");

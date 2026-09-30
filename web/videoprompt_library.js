@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.113"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.114"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -1069,6 +1069,7 @@ function startController(node) {
     floor: () => _cachedTotalH,
     minWidth: NODE_WIDTH,
     margin: 8,
+    onSettled: () => recalcHeight(),
   });
   updateMiniMode();
 
@@ -3025,6 +3026,7 @@ function startRandomController(node) {
     floor: () => _rdCachedH,
     minWidth: NODE_WIDTH,
     margin: 8,
+    onSettled: () => recalcHeight(),
   });
   // v3.46：状态行过窄时隐藏「预览」文字只留图标（RO 只切换 class，不改尺寸，无反馈回路）
   const roStatus = new ResizeObserver(() => {

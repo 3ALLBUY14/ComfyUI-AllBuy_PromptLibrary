@@ -289,6 +289,7 @@ function startController(node) {
     floor: () => _cachedTotalH,
     minWidth: NODE_WIDTH,
     margin: 8,
+    onSettled: () => recalcHeight(),
   });
   // 节点删除时回收 RO：其持有 container 强引用，不摘会钉住整个面板闭包
   const _origOnRemovedBips = node.onRemoved;

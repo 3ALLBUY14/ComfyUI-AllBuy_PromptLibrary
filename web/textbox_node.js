@@ -431,6 +431,7 @@ function attach(node) {
     floor: () => node._atbCachedH || 0,
     minWidth: STACK_MIN_WIDTH,
     margin: STACK_BOTTOM_GAP,
+    onSettled: () => recalcHeight(node),
   });
   const _origOnRemoved = node.onRemoved;
   node.onRemoved = function () {

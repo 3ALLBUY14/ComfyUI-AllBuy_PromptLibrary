@@ -111,8 +111,12 @@ export function clearFillPanel(el) {
 
 // onResize 钩子：新前端 setSize 每次都回调它，工作流载入的大尺寸也走这里。
 // 拖矮到内容下限以下先钳回（钳回触发的内层 onResize 也会走到填充分支），再按需填充。
+// 拖拽停稳后（180ms 无新 resize）回调 opts.onSettled 做一次重校准：拖拽中用的下限
+// 可能是旧内容量出来的（内容随后增长过），松手后按最新内容回弹，否则填充窗口被压成
+// 一条缝、底栏和卡片叠在一起（用户报的"拉小了底部被叠没"）。
 export function installFillResize(node, opts) {
   const orig = node.onResize;
+  let settleTimer = 0;
   node.onResize = function () {
     orig?.apply(this, arguments);
     const el = opts.el();
@@ -126,6 +130,10 @@ export function installFillResize(node, opts) {
       applyFillPanel(this, el, opts.chrome(), opts.margin ?? 18);
     } else if (el.classList.contains("vpl-fill")) {
       clearFillPanel(el);
+    }
+    if (opts.onSettled) {
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => { if (el.isConnected) opts.onSettled(); }, 180);
     }
   };
 }
