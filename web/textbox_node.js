@@ -91,6 +91,16 @@ function iconBtn(label, title, onClick, cls = "") {
 // ---------------------------------------------------------------------------
 // 入库 / 从库插入 弹窗（overlay 复用 .vpl-overlay 主题）
 // ---------------------------------------------------------------------------
+// 跨弹窗记忆（模块级）：上次用的库 + 上次插入的组——重开弹窗直接回到上次位置，
+// 不必每次从第一个库、列表顶部重新翻
+let lastLibName = null;
+let lastInsertGroup = null; // { lib, name }
+// 库下拉预选上次值并跟踪选择（两个弹窗共用同一记忆）
+function wireLibMemory(libSel, libs) {
+  if (lastLibName && libs.some((L) => L.name === lastLibName)) libSel.value = lastLibName;
+  libSel.addEventListener("change", () => { lastLibName = libSel.value; });
+}
+
 async function userLibraries() {
   // /libraries 返回 {source, name, display_name, count}——没有 locator 字段
   //（初版按 x.locator 过滤导致"识别不到已有库"），locator 由调用方按 source 组装
@@ -158,6 +168,7 @@ function saveToLibrary(text, onDone) {
         });
         const saved = await apiPost("/library/save", { locator: loc, data });
         if (!saved || saved.ok !== true) throw new Error((saved && saved.error) || "保存失败");
+        lastLibName = lib; // 入库成功也更新记忆：下次直接定位到这个库
         okBtn.textContent = "✓ 已入库";
         setTimeout(() => { close(); onDone && onDone(); }, 500);
       } catch (err) {
@@ -186,6 +197,7 @@ function saveToLibrary(text, onDone) {
       opt.value = L.name;
       libSel.appendChild(opt);
     }
+    wireLibMemory(libSel, libs);
     nameInput.focus();
   });
 }
@@ -214,6 +226,7 @@ function insertFromLibrary(onInsert) {
       opt.value = L.name;
       libSel.appendChild(opt);
     }
+    wireLibMemory(libSel, libs); // 预选上次用的库（首次 load 即加载它的组）
     // 切库竞态守卫（batch_image_selector 同款）：连续切换时慢的旧响应后到，丢弃之，
     // 防旧库列表覆盖新库、点行插入过期内容
     let loadSeq = 0;
@@ -230,16 +243,28 @@ function insertFromLibrary(onInsert) {
       for (const g of groups) {
         const row = el("div", "vpl-item atb-lib-item");
         stopGraph(row);
-        const name = el("span", "vpl-item-name", g.name || "未命名");
+        const gname = g.name || "未命名";
+        const name = el("span", "vpl-item-name", gname);
         name.title = g.name || "";
         const preview = el("span", "vpl-item-cat atb-lib-prev",
           (g.positive || "").replace(/\s+/g, " ").slice(0, 40) || "（空）");
         row.append(name, preview);
         row.addEventListener("click", () => {
+          lastLibName = libSel.value;
+          lastInsertGroup = { lib: libSel.value, name: gname }; // 记住本次插入的组
           onInsert((g.positive || "").trim());
           // 插入后不关弹窗：可连续插入多组；按 Esc/✕ 关闭
         });
         list.appendChild(row);
+      }
+      // 上次插入的组就在当前库：高亮并滚到它——重开即回到上次位置
+      if (lastInsertGroup && lastInsertGroup.lib === libSel.value) {
+        const prev = [...list.querySelectorAll(".atb-lib-item")]
+          .find((r) => r.querySelector(".vpl-item-name")?.textContent === lastInsertGroup.name);
+        if (prev) {
+          prev.classList.add("vpl-item-selected");
+          prev.scrollIntoView({ block: "center" });
+        }
       }
     };
     libSel.addEventListener("change", load);

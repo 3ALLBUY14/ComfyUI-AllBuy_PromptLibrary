@@ -2607,9 +2607,27 @@ body > .bips-lightbox-ghost { z-index: 10000; }
 .atb-switch.on .atb-track::after { left: 15px; }
 .atb-switch-label { font-size: 12px; }
 /* 弹窗内 */
-.atb-dialog { max-width: 480px; }
+/* 弹窗可读性（同 .alora-pop 口径）：弹窗压在画布/节点上方，复用的 .vpl-dialog 半透明
+   玻璃底(0.92+blur)与背景糊成一片——文本框两弹窗改专属近黑底+亮边拉开层次 */
+.atb-dialog {
+  max-width: 480px;
+  background: rgba(11, 12, 18, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+:root[data-theme="light"] .atb-dialog,
+.litegraph.litegraph.litegraph.theme-light .atb-dialog {
+  background: rgba(253, 253, 255, 0.99);
+  border-color: rgba(20, 24, 40, 0.28);
+}
 .atb-hint { margin-bottom: 4px; }
 .atb-select { width: 100%; }
+/* 原生 select 的弹出层/滚动条跟随主题：不声明 color-scheme 时 Chromium 按浅色渲染
+   选项列表，暗色页面上一片突兀的白；option 配色双保险 */
+.atb-select { color-scheme: dark; }
+:root[data-theme="light"] .atb-select,
+.litegraph.litegraph.litegraph.theme-light .atb-select { color-scheme: light; }
+.atb-select option { background: #16181f; color: #f1f5fb; }
+:root[data-theme="light"] .atb-select option { background: #fff; color: #1a1d24; }
 .atb-lib-list { max-height: 320px; overflow-y: auto; margin-top: 6px; }
 .atb-lib-item { cursor: pointer; }
 .atb-lib-prev { color: var(--vpl-text-muted); font-size: 11px; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
