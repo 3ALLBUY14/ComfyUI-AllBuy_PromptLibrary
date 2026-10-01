@@ -87,12 +87,17 @@ def _disk_refs():
     """
     from . import library_store
     refs = set()
-    for path in library_store.all_library_paths():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                refs |= _group_refs(json.load(f))
-        except Exception:  # noqa: BLE001
-            continue  # 读不动的库跳过：宁可少删，不可因读失败扩大删除面
+    # 读库 JSON 必须持 _write_lock：不锁的话本函数的 open 读句柄会与并发保存
+    # _atomic_write_json 的 os.replace 在 Windows 上相撞（读句柄无 FILE_SHARE_DELETE
+    # → WinError 5），保存被误报成「库为只读」。锁在 save_library 返回后才被调用，
+    # 不会重入死锁。
+    with library_store._write_lock:
+        for path in library_store.all_library_paths():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    refs |= _group_refs(json.load(f))
+            except Exception:  # noqa: BLE001
+                continue  # 读不动的库跳过：宁可少删，不可因读失败扩大删除面
     return refs
 
 

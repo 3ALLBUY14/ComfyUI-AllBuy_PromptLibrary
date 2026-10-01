@@ -72,7 +72,9 @@ class PromptLibrary:
                 sel = []
         except Exception:
             sel = []
-        return sel
+        # 只保留非空字符串 id（组 id 本就是字符串）：dict/嵌套数组等不可哈希元素会让
+        # merge_groups 的 `gid in by_id` 抛 TypeError（与 random_draw._as_id_set 同口径）
+        return [x for x in sel if isinstance(x, str) and x]
 
     @classmethod
     def _load_groups(cls, library, library_data):
@@ -84,7 +86,12 @@ class PromptLibrary:
                 data = constants.make_empty_library()
         else:
             data = library_store.load_library(locator)
-        return data.get("groups", []) if isinstance(data, dict) else []
+        groups = data.get("groups", []) if isinstance(data, dict) else []
+        # inline 库数据同样归一：非 dict 元素（畸形导入文件经前端「导入文件」直入）会让
+        # draw/merge 全线 AttributeError——文件路径经 load_library 已有自愈，此处对齐同款口径
+        if not isinstance(groups, list):
+            return []
+        return [g for g in groups if isinstance(g, dict)]
 
     @staticmethod
     def _parse_vars(var_values):

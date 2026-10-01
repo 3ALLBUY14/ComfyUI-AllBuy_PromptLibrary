@@ -5,7 +5,7 @@ import { openEditor, uid } from "./editor_dialog.js";
 import { previewGroup, previewMerged } from "./preview_dialog.js";
 import { installBypassSync, installExecutionLock, applyFillPanel, installFillResize } from "./panel_guard.js";
 
-const PLUGIN_VERSION = "v3.123"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
+const PLUGIN_VERSION = "v3.124"; // 改样式/逻辑时递增，用于强制浏览器刷新缓存（与后端 constants.PLUGIN_VERSION 一致）
 
 // ---------------------------------------------------------------------------
 // 注入样式表（ComfyUI 不会自动加载 WEB_DIRECTORY 下的 CSS，必须手动注入 link）
@@ -338,6 +338,11 @@ function locatorLabel(loc, libs) {
 // ---------------------------------------------------------------------------
 // 节点控制器
 // ---------------------------------------------------------------------------
+// v3.124：活跃主面板 controller 注册表——保存成功后通知同库兄弟节点重载磁盘数据。
+// 每个节点持有自己 init 时拉到的全量副本，兄弟不刷新时其后续任何编辑都会整库回写、
+// 静默覆盖先保存者的编辑（last-writer-wins 数据丢失）。
+const _activeLibControllers = new Set();
+
 function attachController(node) {
   // 不同前端版本下，onNodeCreated 触发时 INPUT_TYPES 对应的存储 widget 可能尚未创建。
   // 等待它们就绪后再启动，避免 find 返回 undefined 导致隐藏失效、初始化中断。
@@ -441,6 +446,13 @@ function startController(node) {
   const els = {};
   let dragId = null;
   let loadSeq = 0; // 加载序号，防止异步加载竞态（工作流恢复时）
+
+  // v3.124：注册本 controller（locator 随取随算——切库后按新 locator 匹配）；节点删除时注销
+  const _ctl = {
+    locKey: () => JSON.stringify(state.locator),
+    refresh: () => refreshFromWidgets(), // 函数声明在闭包尾部，提升可用
+  };
+  _activeLibControllers.add(_ctl);
 
   // 从 widget / properties 读取状态（widget 已移除，工作流恢复主要靠 properties._vpl）
   // v3.50：兼容读中文键——v3.48/v3.49 期间保存的工作流 properties._vpl 里是中文键
@@ -625,6 +637,14 @@ function startController(node) {
       await apiPost("/library/save", { locator: state.locator, data: state.libraryData });
     } catch (e) {
       alert("保存失败：" + e.message);
+      return;
+    }
+    // v3.124：保存成功后让同库兄弟节点重载磁盘最新数据——它们的内存副本已陈旧，
+    // 不刷新的话其下一次编辑会整库回写并静默覆盖本次保存。宁可重载（丢兄弟未保存的
+    // 瞬时编辑）也不能让陈旧副本落盘；双开标签页场景留待 mtime/409 方案。
+    const myKey = JSON.stringify(state.locator);
+    for (const c of _activeLibControllers) {
+      if (c !== _ctl && c.locKey() === myKey) c.refresh();
     }
   }
 
@@ -964,6 +984,7 @@ function startController(node) {
   const _origOnRemoved = node.onRemoved;
   node.onRemoved = function () {
     _origOnRemoved?.apply(this, arguments);
+    _activeLibControllers.delete(_ctl); // v3.124：注销，防止通知已删除节点
     closeMiniFloat();
     closeQuickEdit();
     closeWcPanel();
@@ -1626,7 +1647,7 @@ function startController(node) {
       value: state.vars[name] || "",
     });
     if (opts.length) {
-      const dlId = "vpl-var-dl-" + name;
+      const dlId = "vpl-var-dl-" + name + "-" + uid(); // v3.124：拼 uid 防同类节点同名槽 datalist id 冲突（对齐 editor_dialog）
       input.setAttribute("list", dlId);
       panel.appendChild(h("datalist", { id: dlId }, opts.map((o) => h("option", { value: o }))));
     }
@@ -2068,7 +2089,9 @@ function startController(node) {
     panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + "px";
     panel.style.top = Math.max(8, r.top - ph - 6) + "px";
     panel._docHandler = (e) => { if (!panel.contains(e.target)) closeQuickEdit(); };
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeQuickEdit(); });
+    // v3.124：keydown 必须存引用再挂（此前匿名函数永不摘除，每次打开泄漏一个监听）
+    panel._keyHandler = (e) => { if (e.key === "Escape") closeQuickEdit(); };
+    document.addEventListener("keydown", panel._keyHandler);
     setTimeout(() => document.addEventListener("click", panel._docHandler), 0);
   }
 
@@ -2301,8 +2324,15 @@ function startController(node) {
     const p = prompt("输入库 JSON 文件的绝对路径（如 D:\\prompts\\my.json）：");
     if (!p) return;
     const loc = { source: "custom", path: p.trim() };
-    // 先试读
-    const res = await apiGet("/library?locator=" + encodeURIComponent(JSON.stringify(loc)));
+    // 先试读（v3.124：apiGet 兜不住 fetch 网络层 reject——后端不可达时照原样抛，
+    // 必须就地接住给提示，与 createLibrary/saveAsUserLibrary 口径对齐）
+    let res;
+    try {
+      res = await apiGet("/library?locator=" + encodeURIComponent(JSON.stringify(loc)));
+    } catch (e) {
+      alert("连接后端失败，请检查 ComfyUI 是否在运行");
+      return;
+    }
     if (!res.ok) { alert("加载失败：" + (res.error || "文件不存在或格式错误")); return; }
     await switchLibrary(loc, null);
   }
@@ -3266,7 +3296,7 @@ function startRandomController(node) {
       value: state.vars[name] || "",
     });
     if (opts.length) {
-      const dlId = "vpl-rd-var-dl-" + name;
+      const dlId = "vpl-rd-var-dl-" + name + "-" + uid(); // v3.124：拼 uid 防同类节点同名槽 datalist id 冲突（对齐 editor_dialog）
       input.setAttribute("list", dlId);
       panel.appendChild(h("datalist", { id: dlId }, opts.map((o) => h("option", { value: o }))));
     }

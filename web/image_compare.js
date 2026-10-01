@@ -393,7 +393,9 @@ class ABCompareWidget {
       }
       if (!hasImages(this.node)) {
         // 引用已在、图还在解码的空窗期也消费按下：否则穿透成节点拖拽把节点拖走
-        const pending = Object.values(this.node._abImages || {}).some((e) => e && !e.img);
+        // v3.124：排除加载失败条目（img:null 且 error:true）——失败不是解码中，
+        // 不能永久吞掉图区点击、锁死节点抓拖
+        const pending = Object.values(this.node._abImages || {}).some((e) => e && !e.img && !e.error);
         return pending;
       }
       this.node._abDragging = true;

@@ -159,6 +159,9 @@ def save_library(locator, data):
     path, readonly = resolve(locator)
     if readonly:
         raise PermissionError("内置库 / 自定义路径库为只读，无法保存")
+    loc = parse_locator(locator)
+    if loc.get("source", "user") == "user" and _sanitize_filename(loc.get("name") or "") in _RESERVED_LIBRARY_NAMES:
+        raise ValueError(f"库名 {loc.get('name')} 是系统保留名，无法保存")
     if not isinstance(data, dict):
         raise ValueError("库数据格式错误")
     data.setdefault("version", 1)
@@ -185,6 +188,8 @@ def list_libraries():
             if fn.endswith(".backup") or fn.endswith(".tmp"):
                 continue
             name = fn[:-5]
+            if name in _RESERVED_LIBRARY_NAMES:
+                continue  # lora_groups.json 与 LoRA 分组存储共用同一文件，绝不能当用户库暴露
             count = 0
             display = name
             try:
@@ -239,6 +244,9 @@ def create_library(name):
 
 def delete_library(name):
     """删除用户库（同时删除 backup）。"""
+    safe = _sanitize_filename(name)
+    if safe in _RESERVED_LIBRARY_NAMES:
+        raise ValueError(f"库名 {safe} 是系统保留名，无法删除")
     path = _user_path(name)
     with _write_lock:
         if os.path.isfile(path):

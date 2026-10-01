@@ -7,6 +7,10 @@ from typing import Any, Optional
 _WILDCARD_RE = re.compile(r"\{([^{}]*)\}")
 # 匹配属性标签 #名称#（名称不含空白/#/:{}|，≤24 字）
 _TAG_RE = re.compile(r"#([^#\s{}:|]{1,24})#")
+# 自指槽值的体积闸（200 轮封顶只防轮数不防体积）：vars 值含同名槽 ≥2 次时每轮翻倍
+#（{'n':'{n}{n}x'}），几十轮即数百 MB 打到 MemoryError——超限直接报错，/draw 层
+# except 兜成 400，节点执行变成明确的节点级报错。线性自指 200 轮仅数百字符，不受影响。
+_MAX_EXPANDED_CHARS = 200_000
 
 
 def has_wildcards(*texts):
@@ -101,6 +105,9 @@ def expand_wildcards(text, rng=None, vars=None):
             lambda m: _expand_slot(m, rng, vars),
             text,
         )
+        if len(text) > _MAX_EXPANDED_CHARS:
+            raise ValueError(
+                f"通配符/变量展开超出长度上限（>{_MAX_EXPANDED_CHARS} 字符），变量取值疑似自指膨胀")
     return text
 
 

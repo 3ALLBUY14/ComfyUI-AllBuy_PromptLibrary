@@ -173,8 +173,11 @@ function startController(node) {
   els.browseBtn = iconButton(ICONS.folder, "自由选择图片目录（可输入任意路径 / 最近使用 / input 子目录速选）", openFolderPicker);
   els.reloadBtn = h("button", { class: "bips-btn", type: "button", title: "重新扫描", onclick: () => loadImages() }, ["刷新"]);
   const sizeWrap = h("div", { class: "bips-size" }, [h("span", {}, ["缩略图"])]);
+  let _thumbTimer = 0;
   els.thumbRange = h("input", { type: "range", min: String(MIN_THUMB), max: "256", step: "8", value: String(state.thumbnailSize),
-    oninput: (e) => { state.thumbnailSize = Math.max(MIN_THUMB, parseInt(e.target.value, 10) || MIN_THUMB); els.thumbVal.textContent = state.thumbnailSize + "px"; container.style.setProperty("--bips-size", state.thumbnailSize + "px"); } });
+    oninput: (e) => { state.thumbnailSize = Math.max(MIN_THUMB, parseInt(e.target.value, 10) || MIN_THUMB); els.thumbVal.textContent = state.thumbnailSize + "px"; container.style.setProperty("--bips-size", state.thumbnailSize + "px");
+      // v3.124：瀑布流列数/卡片比例渲染时算死，须重渲染才生效；render 内含 save() 即时落盘（防抖同搜索框）
+      clearTimeout(_thumbTimer); _thumbTimer = setTimeout(() => render(), 150); } });
   els.thumbVal = h("span", { class: "bips-size-val" }, [state.thumbnailSize + "px"]);
   sizeWrap.appendChild(els.thumbRange);
   sizeWrap.appendChild(els.thumbVal);
@@ -623,7 +626,8 @@ function startController(node) {
       .filter((l) => l.abs === im.abs && state.libraryGroups.some((x) => x.id === l.gid))
       .map((l) => l.gid)
       .join(",");
-    const sig = [state.view, size, im.mtime || 0, im.file, im.category || "", im.group || "", gidsKey].join("");
+    // v3.124：签名必须含 bulkMode——否则进/出批量模式时池全命中旧卡，勾选框永不出现/消失
+    const sig = [state.view, state.bulkMode, size, im.mtime || 0, im.file, im.category || "", im.group || "", gidsKey].join("");
     const hit = _cardPool.get(im.abs);
     if (hit && hit.sig === sig) {
       hit.el.classList.toggle("bips-selected", state.bulkSel.has(im.abs));

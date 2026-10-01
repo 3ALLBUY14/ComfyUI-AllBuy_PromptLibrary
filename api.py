@@ -103,6 +103,8 @@ async def save_library(request):
         body = await request.json()
     except Exception:  # noqa: BLE001
         return _json_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        return _json_error("请求体必须是 JSON 对象")
     locator = body.get("locator")
     data = body.get("data")
     if data is None:
@@ -124,6 +126,8 @@ async def create_library(request):
         body = await request.json()
     except Exception:  # noqa: BLE001
         return _json_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        return _json_error("请求体必须是 JSON 对象")
     name = (body.get("name") or "").strip()
     if not name:
         return _json_error("库名称不能为空")
@@ -142,6 +146,8 @@ async def delete_library(request):
         body = await request.json()
     except Exception:  # noqa: BLE001
         return _json_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        return _json_error("请求体必须是 JSON 对象")
     name = (body.get("name") or "").strip()
     if not name:
         return _json_error("缺少库名称")
@@ -250,6 +256,31 @@ async def list_folders(request):
         return _json_error(e)
 
 
+def _scan_images(root):
+    """同步扫描目录并逐文件读尺寸。PIL 解码是重活（大目录秒级），调用方必须丢线程池，
+    否则卡住事件循环上所有 HTTP/WS（与缩略图/导出端点同口径）。"""
+    images = []
+    for fn in sorted(os.listdir(root)):
+        if not fn.lower().endswith(batch_image_node.IMAGE_EXTS):
+            continue
+        full = os.path.join(root, fn)
+        if not os.path.isfile(full):
+            continue
+        w = h = 0
+        try:
+            with Image.open(full) as im:
+                w, h = im.size
+        except Exception:
+            pass
+        mtime = 0.0
+        try:
+            mtime = os.path.getmtime(full)
+        except OSError:
+            pass
+        images.append({"name": fn, "abs": os.path.abspath(full), "w": w, "h": h, "mtime": mtime})
+    return images
+
+
 @_get("/images")
 async def list_images(request):
     """扫描指定目录，返回图片列表（含绝对路径与尺寸）。
@@ -259,25 +290,7 @@ async def list_images(request):
     folder = request.query.get("folder", "")
     try:
         root = batch_image_node.resolve_root(folder)
-        images = []
-        for fn in sorted(os.listdir(root)):
-            if not fn.lower().endswith(batch_image_node.IMAGE_EXTS):
-                continue
-            full = os.path.join(root, fn)
-            if not os.path.isfile(full):
-                continue
-            w = h = 0
-            try:
-                with Image.open(full) as im:
-                    w, h = im.size
-            except Exception:
-                pass
-            mtime = 0.0
-            try:
-                mtime = os.path.getmtime(full)
-            except OSError:
-                pass
-            images.append({"name": fn, "abs": os.path.abspath(full), "w": w, "h": h, "mtime": mtime})
+        images = await asyncio.to_thread(_scan_images, root)
         return web.json_response({"ok": True, "folder": folder, "root": root, "images": images})
     except Exception as e:  # noqa: BLE001
         return _json_error(e)
@@ -559,6 +572,8 @@ async def media_mask_save(request):
         body = await request.json()
     except Exception:
         return _json_error("请求体不是合法 JSON")
+    if not isinstance(body, dict):
+        return _json_error("请求体必须是 JSON 对象")
     asset_name = (body.get("name") or "").strip()
     dataurl = body.get("data") or ""
     m = re.match(r"^data:image/png;base64,(.+)$", dataurl, re.S)
@@ -572,6 +587,9 @@ async def media_mask_save(request):
         return _json_error("invalid mask key")
     try:
         raw = base64.b64decode(m.group(1), validate=True)
+    except Exception as e:
+        return _json_error(f"dataURL base64 非法: {e}")  # 坏输入 4xx，不进 5xx 兜底
+    try:
         from PIL import Image
         import io
         with Image.open(io.BytesIO(raw)) as im:

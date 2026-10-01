@@ -1051,10 +1051,12 @@ function startMediaPanel(node, container, wManifest) {
     const exportBtn = h("button", { class: "media-btn", type: "button",
       title: "按当前裁剪框与缩放设置导出 PNG 文件" }, ["⬇ 导出 PNG"]);
     exportBtn.addEventListener("click", () => {
+      // v3.124：导出用弹窗内当前缩放控件值（此前读 state.scale 上次保存值——改了缩放
+      // 未点保存就导出，结果与本卡输出预览不一致；对齐视频弹窗 refresh-then-export 做法）
       const c = crop || [0, 0, 1, 1];
       const url = `${API}/media/export/image?name=${encodeURIComponent(assetFileName(a))}`
         + `&x0=${c[0]}&y0=${c[1]}&x1=${c[2]}&y1=${c[3]}`
-        + `&scale_mode=${state.scale.mode}&scale_value=${state.scale.value}&scale_multiple=${state.scale.multiple}`;
+        + `&scale_mode=${modeSel.value}&scale_value=${parseInt(valInp.value, 10) || 0}&scale_multiple=${parseInt(multSel.value, 10) || 0}`;
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = "";
@@ -1075,7 +1077,7 @@ function startMediaPanel(node, container, wManifest) {
   let videoDlg = null;
   function openVideoDialog(a) {
     if (videoDlg) { videoDlg.remove(); videoDlg = null; }
-    const dur = a.duration || 0;
+    let dur = a.duration || 0; // v3.124：改 let——probe 补全时长后同步，否则 refresh 仍用旧 0 估值
     const vp = { ...state.videoParams };
     const probe = async () => { // 打开时后台补 fps/时长（若前端还没有）
       if (!a.fps || !a.duration) {
@@ -1085,7 +1087,8 @@ function startMediaPanel(node, container, wManifest) {
           if (d?.ok && !a.duration && d.duration > 0) { a.duration = d.duration; }
         } catch (e) { /* ignore */ }
       }
-      if (a.duration > 0) { // 时长补全后同步滑杆量程
+      if (a.duration > 0) { // 时长补全后同步滑杆量程与闭包时长
+        dur = a.duration;
         sStart.max = String(a.duration);
         sEnd.max = String(a.duration);
       }

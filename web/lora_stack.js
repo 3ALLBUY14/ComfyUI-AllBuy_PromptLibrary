@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock, applyFillPanel, installFillRes
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.86");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.124");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -732,7 +732,12 @@ function renderStack(node) {
         input.title = title;
         input.className = "vpl-input alora-num";
         stopGraph(input);
-        input.addEventListener("change", () => onInput(Number(input.value)));
+        // v3.124：清空后失焦 change 的 value=""，Number("")=0 会穿过 isFinite 守卫把
+        // min/max 静默写成 0、权重被 clamp——空值直接保留原值
+        input.addEventListener("change", () => {
+          if (input.value.trim() === "") return;
+          onInput(Number(input.value));
+        });
         return input;
       };
       const minInput = mkNum(entry.min, "权重最小值", (v) => {

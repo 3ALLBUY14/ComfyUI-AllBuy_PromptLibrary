@@ -173,7 +173,8 @@ function saveToLibrary(text, onDone) {
     if (!libs.length) {
       if ((await apiGet("/version")).loadFailed) {
         libSel.appendChild(el("option", null, "⚠ 无法连接后端")).value = "";
-        list.appendChild(el("div", "vpl-empty", "连接后端失败：请检查 ComfyUI 是否在运行，关掉此弹窗稍后重试"));
+        // v3.124：容器是 body（此前误引用 insertFromLibrary 作用域的 list → ReferenceError，提示永不渲染）
+        body.appendChild(el("div", "vpl-empty", "连接后端失败：请检查 ComfyUI 是否在运行，关掉此弹窗稍后重试"));
         return;
       }
       libSel.appendChild(el("option", null, "（无用户库）")).value = "";
@@ -446,7 +447,10 @@ function attach(node) {
     closeHistPop();
     const pop = el("div", "vpl-corner-pop");
     pop.append(el("div", "vpl-corner-pop-title", "编辑历史（最近 20 条，点击恢复）"));
-    const items = hist.slice(-20).map((v, k) => ({ v, idx: hist.length - 20 + k })).reverse();
+    // v3.124：快照数<20 时 hist.length-20+k 为负 → histApply 的 idx<0 早退、行号显示 # -14；
+    // 起点钳到 0（对齐 slice(-20) 的真实起点），恢复/●标记/行号随之全部正确
+    const histStart = Math.max(0, hist.length - 20);
+    const items = hist.slice(-20).map((v, k) => ({ v, idx: histStart + k })).reverse();
     if (items.length <= 1) pop.append(el("div", "vpl-empty", "还没有历史记录"));
     for (const it of items) {
       const row = el("div", "vpl-corner-pop-item" + (it.idx === hi ? " cur" : ""));

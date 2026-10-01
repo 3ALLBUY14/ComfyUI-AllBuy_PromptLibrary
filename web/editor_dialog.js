@@ -308,7 +308,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       class: "vpl-icon-btn", title: "用剪贴板内容替换正向提示词", html: ICON_PASTE,
       onclick: async () => {
         const t = await readClipboard();
-        if (t) { positiveInput.value = t; flash(pastePosBtn); }
+        if (t) { positiveInput.value = t; dirty = true; flash(pastePosBtn); } // v3.124：脚本赋值须手动置脏
         else positiveInput.focus(); // 浏览器不允许读剪贴板时退回手动 Ctrl+V
       },
     });
@@ -320,6 +320,7 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
       const s = positiveInput.selectionStart ?? v.length;
       const e = positiveInput.selectionEnd ?? s;
       positiveInput.value = v.slice(0, s) + tag + v.slice(e);
+      dirty = true; // v3.124：脚本赋值不触发 input 事件，误关守卫须手动置脏
       positiveInput.focus();
       positiveInput.selectionStart = positiveInput.selectionEnd = s + tag.length;
     }
@@ -670,11 +671,15 @@ export function openEditor(group, { isNew = false, categories = [], palette = {}
     dialog.appendChild(footer);
     overlay.appendChild(dialog);
     // 误点遮罩不应直接丢稿：有编辑痕迹先确认；Esc 出口与其它浮层一致
+    // v3.124：dirty 只由 input/change 置位，chip 增删/色块/移除封面等纯编程赋值不触发
+    // 事件——补一份打开时快照，关闭时两者任一有变化即确认
     let dirty = false;
+    const initialSnapshot = JSON.stringify([data, selCats, curTags, pal]);
     dialog.addEventListener("input", () => { dirty = true; });
     dialog.addEventListener("change", () => { dirty = true; });
     const guardClose = () => {
-      if (dirty && !confirm("有未保存的修改，确定放弃并关闭？")) return;
+      const edited = dirty || JSON.stringify([data, selCats, curTags, pal]) !== initialSnapshot;
+      if (edited && !confirm("有未保存的修改，确定放弃并关闭？")) return;
       close(null);
     };
     overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) guardClose(); });

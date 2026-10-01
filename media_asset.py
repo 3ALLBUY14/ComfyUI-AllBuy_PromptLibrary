@@ -68,17 +68,40 @@ def resolve_mask_path(key):
     return cand if os.path.isfile(cand) else ""
 
 
+def _num_int(v, default=0):
+    """叶子数值容错（slice_pcm 同款思路）：手改工作流可把 NaN/字符串/Infinity 塞进
+    清单数值字段，int()/float() 处炸掉整图执行——非法一律回落默认值。"""
+    try:
+        return int(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _num_float(v, default=0.0):
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return default
+    return n if math.isfinite(n) else default
+
+
 def crop_box_px(w, h, crop):
     """归一化裁剪框 [x0,y0,x1,y1] → 像素 box（PIL crop 用）；无有效面积返回 None。"""
     try:
         x0, y0, x1, y1 = (float(crop[0]), float(crop[1]), float(crop[2]), float(crop[3]))
     except Exception:
         return None
+    # NaN/Infinity 能穿过 float()，到 round(nan*w) 才炸——此处一并拦下
+    if not (math.isfinite(x0) and math.isfinite(y0) and math.isfinite(x1) and math.isfinite(y1)):
+        return None
     x0, x1 = sorted((min(max(x0, 0.0), 1.0), min(max(x1, 0.0), 1.0)))
     y0, y1 = sorted((min(max(y0, 0.0), 1.0), min(max(y1, 0.0), 1.0)))
     if w <= 0 or h <= 0 or x1 - x0 < 1e-6 or y1 - y0 < 1e-6:
         return None
     bx0, by0 = round(x0 * w), round(y0 * h)
+    # bx0 可落在右边缘（x0=0.999 → round(99.9)=100）：不钳回画布的话末尾 min(bx1,w)
+    # 会抵消掉 +1 保底，产出零宽裁剪框 → (B,H,0,3) 退化 tensor / 导出报错
+    bx0, by0 = min(bx0, w - 1), min(by0, h - 1)
     bx1 = max(bx0 + 1, round(x1 * w))
     by1 = max(by0 + 1, round(y1 * h))
     return (bx0, by0, min(bx1, w), min(by1, h))
@@ -222,6 +245,11 @@ def parse_manifest(text):
     data.setdefault("version", 1)
     assets = data.get("assets")
     data["assets"] = assets if isinstance(assets, list) else []
+    # asset 尺寸元数据归一：load_media 的 image_items 会 int(e.get("w"))，垃圾值在此回落 0
+    for a in data["assets"]:
+        if isinstance(a, dict):
+            for k in ("w", "h"):
+                a[k] = _num_int(a.get(k))
     sel = data.get("selected")
     if not isinstance(sel, dict):
         sel = {}
@@ -267,8 +295,8 @@ def ordered_selected_images(manifest):
 # ---------------------------------------------------------------------------
 def scaled_size(w, h, scale):
     mode = (scale.get("mode") or "none")
-    value = int(scale.get("value") or 0)
-    mult = int(scale.get("multiple") or 0)
+    value = _num_int(scale.get("value"))
+    mult = _num_int(scale.get("multiple"))
     if mode == "none" or value <= 0 or w <= 0 or h <= 0:
         return int(w), int(h)
     if mode == "width":
@@ -305,15 +333,15 @@ def compute_video_selection(duration, src_fps, vp):
 
     返回 (start, end, target_fps, max_frames)。end/duration 为 0 表示到结尾。
     """
-    start = max(0.0, float(vp.get("start") or 0.0))
-    end = float(vp.get("end") or 0.0)
+    start = max(0.0, _num_float(vp.get("start")))
+    end = _num_float(vp.get("end"))
     if duration > 0:
         end = duration if end <= start else min(end, duration)
     elif end <= start:
         end = 0.0  # 无时长信息且未指定终点：解到文件结束
-    fps = float(vp.get("fps") or 0.0)
+    fps = _num_float(vp.get("fps"))
     target_fps = fps if fps > 0 else (src_fps or 0.0)
-    max_frames = max(0, int(vp.get("max_frames") or 0))
+    max_frames = max(0, _num_int(vp.get("max_frames")))
     return start, end, target_fps, max_frames
 
 

@@ -117,6 +117,10 @@ def _parse_config(mapping):
         cfg["images"] = []
     if not isinstance(cfg["links"], list):
         cfg["links"] = []
+    # 元素错型（手改工作流塞 ["str"]/[42]）会让 execute 的 e.get/lk.get 裸 AttributeError
+    # ——对齐 media_asset.parse_manifest 对 assets 的 isinstance(dict) 过滤口径
+    cfg["images"] = [e for e in cfg["images"] if isinstance(e, dict)]
+    cfg["links"] = [e for e in cfg["links"] if isinstance(e, dict)]
     return cfg
 
 
@@ -235,7 +239,12 @@ class BatchImagePromptSelector:
             data = library_store.load_library(loc)
         else:
             data = constants.make_empty_library()
-        return data.get("groups", []) if isinstance(data, dict) else []
+        groups = data.get("groups", []) if isinstance(data, dict) else []
+        # inline 库数据同样归一（非 dict 元素会让 merge 全线 AttributeError），
+        # 与 nodes.PromptLibrary._load_groups / load_library 的过滤口径对齐
+        if not isinstance(groups, list):
+            return []
+        return [g for g in groups if isinstance(g, dict)]
 
     def execute(self, 映射数据="{}", 库数据="", **kwargs):
         cfg = _parse_config(映射数据)

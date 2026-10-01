@@ -49,7 +49,12 @@ def _normalize_groups(raw):
             continue
         name = _sanitize_name(g.get("name"))
         loras = []
-        for item in g.get("loras") or []:
+        loras_raw = g.get("loras")
+        if not isinstance(loras_raw, list):
+            # 错型（123/bool/dict/字符串）不炸加载路径、不当字符迭代膨胀，按空处理：
+            # 坏盘文件是合法 JSON 永不触发 backup 回退，此处不自愈则 /lora_groups 永久 500
+            loras_raw = []
+        for item in loras_raw:
             if isinstance(item, str):
                 item = item.strip()
                 if item and item not in loras:
