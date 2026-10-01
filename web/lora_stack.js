@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock, applyFillPanel, installFillRes
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.124");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.125");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -1225,7 +1225,14 @@ async function attach(node) {
     hideAllWidgets(node);
     node._stackEntries = readStack(node);
     node._modelType = findWidget(node, "模型类型")?.value || "UNET";
-    node._loraOptions = await getLoraOptions();
+    // /object_info 网络层 reject / 半截响应体会一路抛到这：widget 已全隐藏又无 DOM，
+    // 节点成空壳——兜底空选项照常挂载面板（刷新/重开工作流可重试拿到真列表）
+    try {
+      node._loraOptions = await getLoraOptions();
+    } catch (e) {
+      console.error("[AllBuy LoRA] 加载 LoRA 选项失败：", e);
+      node._loraOptions = ["None"];
+    }
 
     const container = document.createElement("div");
     container.className = "vpl-node alora-node";
@@ -1264,7 +1271,12 @@ async function attach(node) {
         node._modelType = t;
         setWidget(findWidget(node, "模型类型"), t);
         seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.t === t));
-        modelDD.refresh(await getModelOptions(t), currentModelName());
+        try {
+          modelDD.refresh(await getModelOptions(t), currentModelName());
+        } catch (e) {
+          console.error("[AllBuy LoRA] 切换模型类型拉取列表失败：", e);
+          modelDD.refresh(["None"], currentModelName());
+        }
         advWrap.style.display = t === "GGUF" ? "" : "none";
         renderStack(node);
       });
@@ -1275,7 +1287,13 @@ async function attach(node) {
     // 本节点创建的全部下拉（模型 1 枚 + GGUF 参数 2 枚）：onRemoved 时逐个 destroy
     const dropdowns = [];
     let modelDD = null;
-    modelDD = createDropdown(await getModelOptions(node._modelType), currentModelName(),
+    let modelOptions;
+    try { modelOptions = await getModelOptions(node._modelType); }
+    catch (e) {
+      console.error("[AllBuy LoRA] 加载模型列表失败：", e);
+      modelOptions = ["None"];
+    }
+    modelDD = createDropdown(modelOptions, currentModelName(),
       async (opt) => {
         const key = node._modelType === "Checkpoint" ? "ckpt_name"
           : node._modelType === "GGUF" ? "gguf_name" : "unet_name";
@@ -1323,6 +1341,9 @@ async function attach(node) {
     const podLabel = document.createElement("label");
     podLabel.className = "vpl-check-row";
     podLabel.style.margin = "0";
+    // label 整行恢复交互：面板链路 pointer-events:none 下点文字会穿透画布，
+    // 只剩 16px 复选框本体可点（label 隐式激活开关失效）
+    stopGraph(podLabel);
     const podCheck = document.createElement("input");
     podCheck.type = "checkbox";
     podCheck.className = "vpl-checkbox";
@@ -1440,11 +1461,17 @@ async function attach(node) {
       e.target.closest(".alora-row")?.classList.remove("alora-dragging");
       list.querySelectorAll(".alora-drop-before,.alora-drop-after").forEach((r) => r.classList.remove("alora-drop-before", "alora-drop-after"));
       node._stackDraggingId = null;
+      node._dropTarget = null; // 结束即作废：Esc 取消/死区松手都不留旧目标，防下轮 drop 插错位
     });
     list.addEventListener("dragover", (e) => {
       e.preventDefault();
       const row = e.target.closest(".alora-row");
-      if (!row || row.dataset.id === node._stackDraggingId) return;
+      if (!row || row.dataset.id === node._stackDraggingId) {
+        // 悬停空隙/展开行/被拖行自身：清指示与目标——保留旧值会让松手插到上一次悬停的行旁
+        list.querySelectorAll(".alora-drop-before,.alora-drop-after").forEach((r) => r.classList.remove("alora-drop-before", "alora-drop-after"));
+        node._dropTarget = null;
+        return;
+      }
       list.querySelectorAll(".alora-drop-before,.alora-drop-after").forEach((r) => r.classList.remove("alora-drop-before", "alora-drop-after"));
       const rect = row.getBoundingClientRect();
       row.classList.add(e.clientY < rect.top + rect.height / 2 ? "alora-drop-before" : "alora-drop-after");
@@ -1456,6 +1483,7 @@ async function attach(node) {
       const entries = node._stackEntries;
       const from = entries.findIndex((x) => x.id === fromId);
       const target = node._dropTarget;
+      node._dropTarget = null; // 用后即清
       if (from < 0 || !target) return;
       let to = entries.findIndex((x) => x.id === target.id);
       const [moved] = entries.splice(from, 1);
@@ -1485,9 +1513,10 @@ async function attach(node) {
       if (!text || text.startsWith("（") || text === "✓ 已复制") return;
       try {
         await navigator.clipboard.writeText(text);
-        // 还原用进入时捕获的 text：await 挂起期间重读可能拿到刚设的反馈文案
+        // 还原用进入时捕获的 text：await 挂起期间重读可能拿到刚设的反馈文案。
+        // 还原前校验当前仍是反馈文案：期间 updateFooter 已写入新汇总时不得回踩旧快照
         trig.textContent = "✓ 已复制";
-        setTimeout(() => { trig.textContent = text; }, 1200);
+        setTimeout(() => { if (trig.textContent === "✓ 已复制") trig.textContent = text; }, 1200);
       } catch (_) {}
     };
     trig.addEventListener("click", (e) => {
@@ -1618,6 +1647,9 @@ app.registerExtension({
       if (onConfigure) onConfigure.apply(this, arguments);
       setTimeout(() => {
         hideAllWidgets(this);
+        // undo/重载工作流会整体换节点实例与 entries 数组，开着的弹层闭包引用旧 entry——
+        // 先关掉防选择写进孤儿（本机前端 1.53.6 尚无 clear→onRemoved 派发，不会走 onRemoved 路径）
+        try { this._aloraPickerClose?.(); } catch (_) {}
         if (!this._aloraWidget && !this._aloraAttaching) attach(this);
         clearPendingStackWrite(this); // 丢弃旧内存态的挂起写，防其随后覆盖刚载入的 stack_json
         this._stackEntries = readStack(this);
