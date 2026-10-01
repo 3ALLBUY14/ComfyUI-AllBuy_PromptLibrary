@@ -18,7 +18,7 @@ import { installBypassSync, installExecutionLock, applyFillPanel, installFillRes
 
 const NODE_NAME = "AllBuyLoRAStack";
 // 版本日志：与 videoprompt_library.js/batch_image_selector.js 同款，用户贴控制台即可核对前端新旧
-console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.125");
+console.info("[AllBuy_PromptLibrary] LoRA 堆栈前端已加载 v3.126");
 const API = "/allbuy_promptlibrary";
 const STACK_MIN_WIDTH = 560;
 const STACK_BOTTOM_GAP = 18; // 节点色底缝（测容器+18，与 videoprompt/batch/media 三兄弟一致）
@@ -304,6 +304,10 @@ function renderTreeNode(container, node, depth, expandedMap, onPick) {
   }
 }
 
+// 树展开态跨弹层开合持久（模块级共享）：上次在哪个目录选的，重开还展开着，
+// 不必每次从收起的树根重新逐层点开
+const pickerExpanded = new Set();
+
 function showLoraPicker(node, anchor, entry) {
   const pop = document.createElement("div");
   pop.className = "alora-pop";
@@ -387,7 +391,7 @@ function showLoraPicker(node, anchor, entry) {
         list.appendChild(headAll);
         const treeBox = document.createElement("div");
         list.appendChild(treeBox);
-        renderTreeNode(treeBox, buildTree(free), 0, new Set(), pick);
+        renderTreeNode(treeBox, buildTree(free), 0, pickerExpanded, pick);
       }
     } else {
       const hits = allLoras.filter((n) => n.toLowerCase().includes(query));
@@ -443,7 +447,23 @@ function showLoraPicker(node, anchor, entry) {
     if (e.key === "Escape") close();
   };
 
+  // 打开时定位到当前条目：先展开它所在目录链（树按目录名记展开态），渲染后滚到它的行——
+  // 重开即看到上次选的文件在哪，不用凭记忆重新翻
+  const focusName = entry.name && entry.name !== "None" ? entry.name : null;
+  if (focusName) {
+    const d = loraDir(focusName);
+    if (d) for (const seg of d.split("/")) pickerExpanded.add(seg);
+  }
+
   render();
+  if (focusName) {
+    for (const el of list.querySelectorAll(".alora-file-name")) {
+      if (el.title === focusName) {
+        el.closest(".alora-node")?.scrollIntoView({ block: "center" });
+        break;
+      }
+    }
+  }
   position();
   requestAnimationFrame(position);
   // 关闭监听挂捕获阶段：v3.79 起 stopGraph(list) 会截停列表区域 mousedown 的冒泡，
